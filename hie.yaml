@@ -1,0 +1,13 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "edelwace:lib"
+
+    - path: "./app/Main.hs"
+      component: "edelwace:exe:edelwace-exe"
+
+    - path: "./app/Paths_edelwace.hs"
+      component: "edelwace:exe:edelwace-exe"
+
+    - path: "./test"
+      component: "edelwace:test:edelwace-test"
