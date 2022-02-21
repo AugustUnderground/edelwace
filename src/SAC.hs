@@ -21,12 +21,15 @@ module SAC ( algorithm
            , CriticNetSpec (..)
            , ValueNet (..)
            , ValueNetSpec (..)
+           , SACModel
+           , makeModel
            ) where
 
 import Lib
 
 import Data.List (elemIndex)
 import Data.Maybe (fromJust)
+import Data.Map (fromList)
 import GHC.Generics
 import qualified Data.Random as RNG
 import qualified Torch as T
@@ -111,7 +114,28 @@ instance T.Randomizable ActorNetSpec ActorNet where
                                         <*> T.sample (T.LinearSpec 64      aActDim)
                                         <*> T.sample (T.LinearSpec 64      aActDim)
 
-type SACModel = (ActorNet, CriticNet, ValueNet, ValueNet)
+-- type SACModel = (ActorNet, CriticNet, ValueNet, ValueNet)
+
+data SACModel = SACModel { actorOnline :: ActorNet, criticOnline :: CriticNet  
+                         , valueOnline :: ValueNet, valueTarget :: ValueNet
+                         , actorOptim :: T.Adam, criticOptim :: T.Adam
+                         , valueOptim :: T.Adam 
+                         } deriving (Generic, Show)
+
+makeModel :: Int -> Int -> IO SACModel
+makeModel obsDim actDim = do
+    actorOnl  <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
+    criticOnl <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
+    valueOnl  <- toFloatGPU <$> T.sample (ValueNetSpec obsDim)
+    valueTgt' <- toFloatGPU <$> T.sample (ValueNetSpec obsDim)
+
+    let valueTgt = copySync valueTgt' valueOnl
+
+    let actorOpt  = T.mkAdam 0 β1 β2 (NN.flattenParameters actorOnl)
+        criticOpt = T.mkAdam 0 β1 β2 (NN.flattenParameters criticOnl)
+        valueOpt  = T.mkAdam 0 β1 β2 (NN.flattenParameters valueOnl)
+
+    return $ SACModel actorOnl criticOnl valueOnl valueTgt actorOpt criticOpt valueOpt
 
 -- | Neural Network Forward Pass
 valueForward :: ValueNet -> T.Tensor -> T.Tensor
@@ -171,18 +195,18 @@ act actor state =  T.tanh . toTensor <$> mapM (mapM RNG.sample) n
 --     let a = T.tanh . toTensor $ s
 --     return a
 
-saveModels :: ActorNet -> CriticNet -> ValueNet -> ValueNet-> String -> IO ()
-saveModels ao co vo vt p = head $ zipWith T.saveParams [ao', co', vo', vt'] 
-                                                       [pao, pco, pvo, pvt]
+saveModels :: SACModel -> String -> IO ()
+saveModels SACModel {..} path = head $ zipWith T.saveParams [ao', co', vo', vt'] 
+                                                            [pao, pco, pvo, pvt]
   where
-    ao' = T.toDependent <$> T.flattenParameters ao
-    co' = T.toDependent <$> T.flattenParameters co
-    vo' = T.toDependent <$> T.flattenParameters vo
-    vt' = T.toDependent <$> T.flattenParameters vt
-    pao = p ++ "/actorO.pt"
-    pco = p ++ "/criticO.pt"
-    pvo = p ++ "/valueO.pt"
-    pvt = p ++ "/valueT.pt"
+    ao' = T.toDependent <$> T.flattenParameters actorOnline
+    co' = T.toDependent <$> T.flattenParameters criticOnline
+    vo' = T.toDependent <$> T.flattenParameters valueOnline
+    vt' = T.toDependent <$> T.flattenParameters valueTarget
+    pao = path ++ "/actorO.pt"
+    pco = path ++ "/criticO.pt"
+    pvo = path ++ "/valueO.pt"
+    pvt = path ++ "/valueT.pt"
 
 loadActor :: String -> Int -> Int -> IO ActorNet
 loadActor fp numObs numAct = T.sample (ActorNetSpec numObs numAct) 
@@ -219,21 +243,20 @@ cCriterion = T.mseLoss
 vCriterion :: T.Tensor -> T.Tensor -> T.Tensor
 vCriterion = T.mseLoss
 
-softQupdate :: (T.Optimizer o) => SACModel -> (o, o, o) -> ReplayBuffer 
-            -> IO (SACModel, (o, o, o))
-softQupdate nets opts ReplayBuffer {..} = do
-    let vExpected = T.squeezeAll $ valueForward vNet states
-        cExpected = T.squeezeAll $ criticForward cNet states actions
+softQupdate ::  SACModel -> ReplayBuffer -> IO SACModel
+softQupdate SACModel {..} ReplayBuffer {..} = do
+    let vExpected = T.squeezeAll $ valueForward valueOnline states
+        cExpected = T.squeezeAll $ criticForward criticOnline states actions
 
-    (actions', logProbs', z, μ, σ) <- evaluate aNet states
+    (actions', logProbs', z, μ, σ) <- evaluate actorOnline states
     let logProbs = T.squeezeAll logProbs'
 
-    let vTarget = T.squeezeAll $ valueForward vTgt states'
+    let vTarget = T.squeezeAll $ valueForward valueTarget states'
         dones'  = 1.0 - dones
         cNext   = rewards + dones' * γ' * vTarget
         cLoss   = T.squeezeAll $ cCriterion cExpected cNext
 
-    let cExpNxt = T.squeezeAll $ criticForward cNet states actions'
+    let cExpNxt = T.squeezeAll $ criticForward criticOnline states actions'
         vNext   = cExpNxt - logProbs
         vLoss   = T.squeezeAll $ vCriterion vExpected vNext
 
@@ -245,24 +268,20 @@ softQupdate nets opts ReplayBuffer {..} = do
                                    $ T.pow (2.0 :: Float) z
         aLoss   = T.squeezeAll $ lLoss + μLoss + σLoss + zLoss
 
-    (aNet', aOpt') <- T.runStep aNet aOpt aLoss α'
-    (cNet', cOpt') <- T.runStep cNet cOpt cLoss α'
-    (vNet', vOpt') <- T.runStep vNet vOpt vLoss α'
+    (actorOnline', actorOptim')   <- T.runStep actorOnline actorOptim aLoss α'
+    (criticOnline', criticOptim') <- T.runStep criticOnline criticOptim cLoss α'
+    (valueOnline', valueOptim')   <- T.runStep valueOnline valueOptim vLoss α'
 
-    vTgt' <- softSync vTgt vNet'
+    valueTarget' <- softSync valueTarget valueOnline'
 
-    let nets' = (aNet', cNet', vNet', vTgt')
-        opts' = (aOpt', cOpt', vOpt')
-
-    return (nets', opts')
+    return $ SACModel actorOnline' criticOnline' valueOnline' valueTarget' 
+                      actorOptim' criticOptim' valueOptim'
   where
     α'  = toScalar α
     γ'  = toScalar γ
     μλ' = toScalar μλ
     σλ' = toScalar σλ
     zλ' = toScalar zλ
-    (aNet,cNet,vNet,vTgt) = nets
-    (aOpt,cOpt,vOpt)      = opts
 
 postProcess :: T.Tensor -> [String] -> T.Tensor
 postProcess observations keys = observations'
@@ -274,31 +293,20 @@ postProcess observations keys = observations'
 
 train :: Int -> Int -> ACEURL -> IO SACModel
 train obsDim actDim aceUrl = do
-    actorOnline  <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
-    criticOnline <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
-    valueOnline  <- toFloatGPU <$> T.sample (ValueNetSpec obsDim)
-    valueTarget' <- toFloatGPU <$> T.sample (ValueNetSpec obsDim)
+    model <- makeModel obsDim actDim
 
-    let valueTarget = copySync valueTarget' valueOnline
-
-    let actorOptim  = T.mkAdam 0 β1 β2 (NN.flattenParameters actorOnline)
-        criticOptim = T.mkAdam 0 β1 β2 (NN.flattenParameters criticOnline)
-        valueOptim  = T.mkAdam 0 β1 β2 (NN.flattenParameters valueOnline)
-
-    let models = (actorOnline, criticOnline, valueOnline, valueTarget)
-        optims = (actorOptim, criticOptim, valueOptim)
-
-    (nets', _) <- T.foldLoop (models, optims) numEpisodes $ 
-        \(nets, opts) episode -> do
+    model' <- T.foldLoop model numEpisodes $ 
+        \m episode -> do
             obs_ <- toFloatGPU <$> resetPool aceUrl
             keys <- obsKeysPool aceUrl
             let obs = postProcess obs_ keys
                 buffer = emptyBuffer
-            (nets', opts', _, _) <- T.foldLoop (nets, opts, obs, buffer) numSteps $
-                \(n, op, ob, buf) stp -> do
-                    let (actOnline, _, _, _) = n
-                    acts <- act actOnline ob
+            (m', _, _) <- T.foldLoop (m, obs, buffer) numSteps $
+                \(mdl, ob, buf) stp -> do
+                    acts <- act (actorOnline mdl) ob
+
                     (obs'',rews,dons,_) <- stepPool aceUrl acts
+
                     let obs' = postProcess obs'' keys
                         newBuf = ReplayBuffer ob acts rews obs' dons
                         buffer' = if lengthBuffer buf > 0 
@@ -308,26 +316,31 @@ train obsDim actDim aceUrl = do
                     let options = T.withDType T.Int32 
                                 . T.withDevice computingDevice 
                                 $ T.defaultOpts
+
                     bufferSample <- sampleBuffer buffer'
                                  <$> T.randintIO 0 (lengthBuffer buffer') 
                                                  [batchSize] options
 
-                    (nets',opts') <- softQupdate n op bufferSample
+                    mdl' <- softQupdate mdl bufferSample
 
-                    let r = T.asValue . T.mean $ rews :: Float
+                    let averageReward = T.asValue . T.mean $ rews :: Float
+                        totalReward = T.asValue . T.sumAll $ rews :: Float
+                        rewardLog = fromList [ ("Total_Reward", [totalReward])
+                                             , ("Average_Reward", [averageReward])]
 
                     putStrLn $ "Step: " ++ show stp ++ " | Average Reward : "
-                                        ++ show r
+                                        ++ show averageReward
 
-                    return (nets', opts', obs', buffer')
+                    writeLog logPath rewardLog
+                    writeEnvLog logPath aceUrl
+
+                    return (mdl', obs', buffer')
 
             putStrLn $ "Episode: " ++ show episode ++ " | Done."
-            return (nets', opts')
+            return m'
        
-    let (actorOnl, criticOnl, valueOnl, valueTgt) = nets'
-
-    saveModels actorOnl criticOnl valueOnl valueTgt ptPath
-    return nets'
+    saveModels model' ptPath
+    return model'
     where 
         numEpisodes = 666 :: Int
         numSteps    = 100 :: Int
@@ -336,4 +349,5 @@ train obsDim actDim aceUrl = do
         -- bufferSize  = round 1.0e7 :: Int
         ptPath      = "./models/sac"
         -- ckptFile    = "./models/sac/model.ckpt"
+        logPath     = "./log/sac"
 
