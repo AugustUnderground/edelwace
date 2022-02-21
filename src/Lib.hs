@@ -38,6 +38,8 @@ module Lib
     , obsKeysPool
     , stepPool
     , stepsToTuple
+    , writeLog
+    , writeEnvLog
     ) where
 
 import qualified Data.ByteString.Lazy as BS
@@ -49,6 +51,7 @@ import Data.Functor
 import Network.Wreq
 import Control.Lens
 import GHC.Generics
+import System.Directory
 import qualified Torch as T
 import qualified Torch.Lens as TL
 
@@ -246,6 +249,32 @@ stepPool :: ACEURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = acePoolStep url (tensorToMap action) <&> stepsToTuple
 
 ------------------------------------------------------------------------------
--- Visualization
+-- Data Visualization
 ------------------------------------------------------------------------------
 
+-- Obtain current performance from a gace server and write/append to log
+writeEnvLog :: FilePath -> ACEURL -> IO ()
+writeEnvLog logPath aceUrl = do
+    performance <- M.map (M.map (: [])) <$> acePoolMap aceUrl performanceRoute 
+    sizing <- M.map (M.map (: [])) <$> acePoolMap aceUrl sizingRoute 
+    let envData = M.unionWith M.union performance sizing
+    fex <- doesFileExist logPath
+    logData' <- if fex then M.unionWith (M.unionWith (++)) envData 
+                                . fromJust . decode <$> BS.readFile logPath
+                       else return performance
+    BS.writeFile jsonPath (encode logData')
+  where
+    performanceRoute = "current_performance"
+    sizingRoute      = "current_sizing"
+    jsonPath         = logPath ++ "/env.json"
+
+-- Write an arbitrary Map to a log file for visualization
+writeLog :: FilePath -> M.Map String [Float] -> IO ()
+writeLog logPath logData = do
+    fex <- doesFileExist logPath
+    logData' <- if fex then M.unionWith (++) logData . fromJust . decode 
+                            <$> BS.readFile logPath
+                       else return logData
+    BS.writeFile jsonPath (encode logData')
+  where
+    jsonPath = logPath ++ "/log.json"
