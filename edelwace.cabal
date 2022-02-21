@@ -38,6 +38,7 @@ library
     , base >=4.7 && <5
     , bytestring
     , containers
+    , directory
     , hasktorch
     , hvega
     , lens
@@ -58,6 +59,7 @@ executable edelwace-exe
     , base >=4.7 && <5
     , bytestring
     , containers
+    , directory
     , edelwace
     , hasktorch
     , hvega
@@ -82,6 +84,7 @@ test-suite edelwace-test
     , base >=4.7 && <5
     , bytestring
     , containers
+    , directory
     , edelwace
     , hasktorch
     , hvega

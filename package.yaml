@@ -28,6 +28,7 @@ dependencies:
 - bytestring
 - stringsearch
 - containers
+- directory
 - wreq
 - aeson
 - hvega
