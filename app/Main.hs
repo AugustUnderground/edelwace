@@ -13,21 +13,22 @@ import qualified SAC
 -- import Torch as T
 -- import Criterion.Main
 
-
 main :: IO ()
 main = do
     putStrLn $ "Running " ++ SAC.algorithm
     acid <- SAC.train obs act url
+    SAC.saveAgent acid ptPath
     putStrLn "``'-.,_,.-'``'-.,_,.='``'-., DONE ,.-'``'-.,_,.='``'-.,_,.='``"
-      where 
-        host       = "localhost"
-        port       = "7009"
-        aceID      = "op2"
-        aceBackend = "xh035"
-        aceVariant = "0"
-        url        = aceURL host port aceID aceBackend aceVariant
-        act        = 4
-        obs        = 24
+  where 
+    host       = "localhost"
+    port       = "7009"
+    aceID      = "op2"
+    aceBackend = "xh035"
+    aceVariant = "0"
+    url        = aceURL host port aceID aceBackend aceVariant
+    act        = 4
+    obs        = 24
+    ptPath      = "./models/sac"
 
 -- main :: IO()
 -- main = defaultMain [ bench "train" $ whnfIO (SAC.train obs act url) ]
