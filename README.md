@@ -1,7 +1,8 @@
 # EDELWAC²E
 
 Reinforcement Learning Algorithms for
-[GAC²E](https://github.com/AugustUnderground/gace) in
+[GAC²E](https://github.com/AugustUnderground/gace) via
+[Hym](https://github.com/AugustUnderground/hym) in Haskell with
 [HaskTorch](https://github.com/hasktorch/hasktorch).
 
 ## Setup
@@ -9,10 +10,11 @@ Reinforcement Learning Algorithms for
 LibTorch is required, as per HaskTorch Tutorial, and must be symlinked into
 this directory. Then source `setenv` in your shell.
 
-For training [OAC²EIS](https://github.com/AugustUnderground/oaceis) must be up
+For training [Hym](https://github.com/AugustUnderground/hym) must be up
 and running.
 
 ```bash
+$ source setenv
 $ stack build
 $ stack run
 ```
@@ -21,14 +23,14 @@ $ stack run
 
 - hasktorch
 - libtorch-ffi
+- mtl
 - wreq
 - aeson
 - hvega
 - random-fu
+  #- criterion
 
 ## Algorithms
-
-Focus on Probabilistic and Deterministic Policy Gradient Algorithms.
 
 ### SAC
 
