@@ -26,9 +26,9 @@ main = do
     aceBackend = "xh035"
     aceVariant = "0"
     url        = aceURL host port aceID aceBackend aceVariant
-    act        = 4
-    obs        = 24
-    ptPath      = "./models/sac"
+    act        = 10
+    obs        = 46
+    ptPath     = "./models/sac"
 
 -- main :: IO()
 -- main = defaultMain [ bench "train" $ whnfIO (SAC.train obs act url) ]
