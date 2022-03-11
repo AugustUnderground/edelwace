@@ -1,9 +1,10 @@
 {-# OPTIONS_GHC -Wall #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE BlockArguments #-}
 
 module SAC ( algorithm
            , ActorNet (..)
@@ -12,6 +13,7 @@ module SAC ( algorithm
            , CriticNetSpec (..)
            , actorForward
            , criticForward
+           , criticForward'
            , Agent
            , makeAgent
            , act
@@ -38,11 +40,42 @@ import Control.Monad
 import GHC.Generics
 import qualified Data.Random as RNG
 import qualified Torch as T
+import qualified Torch.Initializers as T
 import qualified Torch.NN as NN
 
 ------------------------------------------------------------------------------
 -- Neural Networks
 ------------------------------------------------------------------------------
+
+--T.sample (T.LinearSpec 5 5)
+--
+--lin <- T.sample (T.LinearSpec 10 256)
+--dims =  T.shape . T.toDependent . weight $ lin
+--weight' <- T.xavierNormal 3.0e-3 dims >>= T.makeIndependent
+--bias' = bias lin
+--
+--lin' = T.Linear { weight = weight', bias = bias' }
+
+-- | Calculate weight Limits based on Layer Dimensions
+weightLimit :: T.Linear -> Float
+weightLimit layer = fanIn ** (- 0.5)
+  where
+    fanIn = realToFrac . head . T.shape . T.toDependent . NN.weight $ layer
+
+-- | Initialize Weights of Linear Layer
+weightInit :: Float -> T.Linear -> IO T.Linear
+weightInit limit layer = do
+    weight' <- T.xavierNormal limit dims >>= T.makeIndependent
+    pure T.Linear { NN.weight = weight', NN.bias = bias' }
+  where
+    dims  = T.shape . T.toDependent . NN.weight $ layer
+    bias' = NN.bias layer
+
+-- | Initialize weights based on Fan In
+weightInit' :: T.Linear -> IO T.Linear
+weightInit' layer = weightInit limit layer
+  where
+    limit = weightLimit layer
 
 -- | Actor Network Specification
 data ActorNetSpec = ActorNetSpec { pObsDim :: Int, pActDim :: Int }
@@ -67,42 +100,49 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec {..} = ActorNet <$> T.sample (T.LinearSpec pObsDim 256)
-                                        <*> T.sample (T.LinearSpec 256     256)
-                                        <*> T.sample (T.LinearSpec 256 pActDim)
-                                        <*> T.sample (T.LinearSpec 256 pActDim)
+    sample ActorNetSpec {..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
+                                              >>= weightInit' )
+                                        <*> ( T.sample (T.LinearSpec 256     256)
+                                              >>= weightInit' )
+                                        <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                              >>= weightInit wInit )
+                                        <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                              >>= weightInit wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec {..} = CriticNet <$> T.sample (T.LinearSpec dim 256)
-                                          <*> T.sample (T.LinearSpec 256 256)
-                                          <*> T.sample (T.LinearSpec 256 1)
+    sample CriticNetSpec {..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
+                                                >>= weightInit' )
+                                          <*> ( T.sample (T.LinearSpec 256 256) 
+                                                >>= weightInit' )
+                                          <*> ( T.sample (T.LinearSpec 256 1) 
+                                                >>= weightInit' )
         where dim = qObsDim + qActDim
 
 -- | Actor Network Forward Pass
 actorForward :: ActorNet -> T.Tensor -> (T.Tensor, T.Tensor)
-actorForward ActorNet {..} obs = (μ, σ)
+actorForward ActorNet {..} !obs = (μ, σ)
   where
-    x = T.linear pLayer1 . T.relu
-      . T.linear pLayer0 $ obs
-    μ = T.linear pLayerμ x
-    σ = T.clamp σMin σMax . T.linear pLayerσ $ x
+    !x = T.linear pLayer1 . T.relu
+       . T.linear pLayer0 $ obs
+    !μ = T.linear pLayerμ x
+    !σ = T.clamp σMin σMax . T.linear pLayerσ $ x
 
 -- | Critic Network Forward Pass
 criticForward :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-criticForward CriticNet {..} o a = T.linear qLayer2 . T.relu
-                                 . T.linear qLayer1 . T.relu
-                                 . T.linear qLayer0 $ input
+criticForward CriticNet {..} !o !a = T.linear qLayer2 . T.relu
+                                   . T.linear qLayer1 . T.relu
+                                   . T.linear qLayer0 $ input
   where
-    input = T.cat (T.Dim $ -1) [o,a]
+    !input = T.cat (T.Dim $ -1) [o,a]
 
 -- | Convenience Function
 criticForward' :: CriticNet -> CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-criticForward' c1 c2 s a = q
+criticForward' !c1 !c2 !s !a = q
   where
-    q1 = criticForward c1 s a
-    q2 = criticForward c2 s a
-    q  = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
+    !q1 = criticForward c1 s a
+    !q2 = criticForward c2 s a
+    !q  = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
 
 ------------------------------------------------------------------------------
 -- SAC Agent
@@ -143,13 +183,13 @@ makeAgent obsDim actDim = do
 
     let entropyTarget' = realToFrac (- actDim)
 
-    return $ Agent πOnline q1Online q2Online q1Target q2Target 
-                   πOptim  q1Optim  q2Optim  
-                   entropyTarget' αlog αOptim
+    pure $ Agent πOnline q1Online q2Online q1Target q2Target 
+                 πOptim  q1Optim  q2Optim  
+                 entropyTarget' αlog αOptim
 
 -- | Get an Action (no grad)
 act :: Agent -> T.Tensor -> IO T.Tensor
-act Agent {..} state = do
+act Agent {..} !state = do
     ε' <- toTensor <$> RNG.sample n
     T.detach . T.tanh $ (μ + σ * ε')
   where
@@ -159,21 +199,21 @@ act Agent {..} state = do
 
 -- | Get an action and log probs (grad)
 evaluate :: Agent -> T.Tensor -> Float -> IO (T.Tensor, T.Tensor)
-evaluate Agent {..} state εN = do
+evaluate Agent {..} !state εN = do
     ε' <- toTensor <$> RNG.sample n
-    a  <- T.detach . T.tanh $ (μ + σ * ε')
     z' <- mapM (mapM RNG.sample) n''
-    let l1 = toTensor (zipWith (zipWith RNG.logPdf) n'' z')
+    let a  = T.tanh (μ + σ * ε')
+        l1 = toTensor (zipWith (zipWith RNG.logPdf) n'' z')
         l2 = T.log $ 1.0 - T.pow (2.0 :: Float) a + T.asTensor εN
-        p = l1 - l2
-    return (a,p)
+        p  = l1 - l2
+    pure (a,p)
   where
     (μ,σ') = actorForward actorOnline state
     σ      = T.exp σ'
     n      = RNG.Normal 0 1 :: RNG.Normal Float
-    σ''       = T.asValue σ :: [[Float]]
-    μ''       = T.asValue μ :: [[Float]]
-    n''       = zipWith (zipWith RNG.Normal) μ'' σ'' :: [[RNG.Normal Float]]
+    σ''    = T.asValue σ :: [[Float]]
+    μ''    = T.asValue μ :: [[Float]]
+    n''    = zipWith (zipWith RNG.Normal) μ'' σ'' :: [[RNG.Normal Float]]
 
 -- | Save an Agent to Disk
 saveAgent :: Agent -> String -> IO ()
@@ -231,13 +271,13 @@ updateStep :: Int -> Int -> Agent -> ReplayBuffer -> T.Tensor -> T.Tensor
            -> IO (Agent, T.Tensor)
 updateStep iteration 0 agent _ _ prios = do
     putStrLn $ "Iteration " ++ show iteration ++ " finished Updating."
-    return (agent, prios)
+    pure (agent, prios)
 
 updateStep iteration epoch agent@Agent {..} memories@ReplayBuffer {..} weights _ = do
     (a_t1, logπ_t1) <- evaluate agent s_t1 εNoise
-    let logπ_t1' = T.meanDim (T.Dim 1) T.KeepDim T.Float logπ_t1
-        α = T.exp . T.toDependent $ alphaLog
-    α' <- if iteration == 0 then return (toFloatGPU 0.0)
+    let !logπ_t1' = T.meanDim (T.Dim 1) T.KeepDim T.Float logπ_t1
+        !α        = T.exp . T.toDependent $ alphaLog
+    α' <- if iteration == 0 then pure (toFloatGPU 0.0)
                             else T.detach α
 
     let q_t1' = criticForward' critic1Target critic2Target s_t1 a_t1
@@ -245,7 +285,8 @@ updateStep iteration epoch agent@Agent {..} memories@ReplayBuffer {..} weights _
 
     let q1_t0 = criticForward critic1Online s_t0 a_t0
         q2_t0 = criticForward critic2Online s_t0 a_t0
-        δ1    = w * T.pow (2.0 :: Float) (q1_t0 - q_t1)
+
+    let δ1    = w * T.pow (2.0 :: Float) (q1_t0 - q_t1)
         δ2    = w * T.pow (2.0 :: Float) (q2_t0 - q_t1)
 
     jQ1 <- T.clone $ T.mean (0.5 * δ1)
@@ -254,39 +295,44 @@ updateStep iteration epoch agent@Agent {..} memories@ReplayBuffer {..} weights _
     (critic1Online', critic1Optim') <- T.runStep critic1Online critic1Optim jQ1 ηq
     (critic2Online', critic2Optim') <- T.runStep critic2Online critic2Optim jQ2 ηq
     
-    when (verbose && iteration `elem` [0,10 ..]) do
+    when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Iteration: " ++ show iteration
         putStrLn $ "\tQ1 Loss:\n\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\n\t" ++ show jQ2
         
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
-    let updateAlpha = do
-            logπ_t0 <- T.detach logπ_t0' >>= T.clone
+    let updateAlpha :: IO(T.IndependentTensor, T.Adam)
+        updateAlpha = do
+            logπ_t0 <- T.clone logπ_t0' >>= T.detach
             let jα = T.mean (- α * logπ_t0 - α * h)
-            when (verbose && iteration `elem` [0,10 ..]) do
+            when (verbose && iteration `elem` [0,10 .. numIterations]) do
                 putStrLn $ "\tα Loss:\n\t" ++ show jα
             T.runStep alphaLog alphaOptim jα ηα
+        updateActor :: IO(ActorNet, T.Adam)
         updateActor = do
             q_t0' <- T.detach $ criticForward' critic1Online critic2Online s_t0 a_t0'
             let jπ = T.mean ((α' * logπ_t0') - q_t0')
-            when (verbose && iteration `elem` [0,10 ..]) do
+            when (verbose && iteration `elem` [0,10 .. numIterations]) do
                 putStrLn $ "\tπ Loss:\n\t" ++ show jπ
             T.runStep actorOnline actorOptim jπ ηπ
+        syncCritic :: IO (CriticNet, CriticNet)
         syncCritic = do
             critic1Target' <- softSync critic1Target critic1Online 
             critic2Target' <- softSync critic2Target critic2Online 
-            return (critic1Target', critic2Target')
+            pure (critic1Target', critic2Target')
 
-    (alphaLog', alphaOptim') <- if iteration `elem` [0,d ..]
+    (alphaLog', alphaOptim') <- if iteration `elem` [0,d .. numIterations]
                                    then updateAlpha
-                                   else return (alphaLog, alphaOptim)
-    (actorOnline', actorOptim') <- if iteration `elem` [0,d ..]
+                                   else pure (alphaLog, alphaOptim)
+
+    (actorOnline', actorOptim') <- if iteration `elem` [0,d .. numIterations]
                                       then updateActor
-                                      else return (actorOnline, actorOptim)
-    (critic1Target', critic2Target') <- if iteration `elem` [0,d ..]
+                                      else pure (actorOnline, actorOptim)
+
+    (critic1Target', critic2Target') <- if iteration `elem` [0,d .. numIterations]
                                            then syncCritic
-                                           else return (critic1Target, critic2Target)
+                                           else pure (critic1Target, critic2Target)
 
     prios' <- T.detach $ T.abs (0.5 * (δ1 + δ2) + ε')
 
@@ -300,7 +346,7 @@ updateStep iteration epoch agent@Agent {..} memories@ReplayBuffer {..} weights _
     s_t0 = states
     a_t0 = actions
     s_t1 = states'
-    d'    = toFloatGPU 1.0 - dones
+    d'   = toFloatGPU 1.0 - dones
     w    = T.reshape [-1,1] weights
     r    = rewards * toTensor rewardScale
     γ'   = toTensor γ
@@ -310,38 +356,46 @@ updateStep iteration epoch agent@Agent {..} memories@ReplayBuffer {..} weights _
 
 -- | Perform Policy Update Steps
 updatePolicy :: Int -> Agent -> PERBuffer -> Int -> IO (PERBuffer, Agent)
-updatePolicy iteration agent buffer epochs = do
+updatePolicy iteration !agent !buffer epochs = do
     (memories, indices, weights) <- perSample buffer iteration batchSize
     let prios = priorities buffer
     (agent', prios') <- updateStep iteration epochs agent memories weights prios
     let buffer' = perUpdate buffer indices prios'
-    return (buffer', agent')
+    pure (buffer', agent')
 
 -- | Take steps in the Environment, evaluating the current policy
 evaluateStep :: Int -> Int -> Agent -> HymURL -> PERBuffer -> T.Tensor 
              -> T.Tensor -> IO (PERBuffer, T.Tensor, T.Tensor)
-evaluateStep iteration 0 _ _ buffer states total = do
+evaluateStep iteration 0 _ _ buffer obs total = do
     putStrLn $ "Iteration " ++ show iteration ++ " finished Evauluating."
-    return (buffer, states, total)
+    pure (buffer, obs, total)
 
-evaluateStep iteration step agent envUrl buffer states total = do
-    actions <- act agent states
-    (observations', rewards, dones, infos) <- stepPool envUrl actions
+evaluateStep iteration step agent envUrl buffer obs total = do
+    actions <- act agent obs
+    (obs_, rewards, dones, infos) <- stepPool envUrl actions
 
     let keys    = head infos
-        states' = processGace observations' keys
-        buffer' = perPush buffer states actions rewards states' dones
+        obs''   = processGace obs_ keys
+        buffer' = perPush buffer obs actions rewards obs'' dones
         total'  = T.cat (T.Dim 0) [total, rewards]
     
-    evaluateStep iteration step' agent envUrl buffer' states' total'
+    obs' <- if T.any dones 
+               then flip processGace keys <$> resetPool envUrl 
+               else pure obs''
+
+    when (verbose && T.any dones) do
+        putStrLn $ "Environments done after " ++ show iteration 
+                ++ " iterations, resetting:\n\t" ++ show dones
+
+    evaluateStep iteration step' agent envUrl buffer' obs' total'
   where
     step' = step - 1
 
 -- | Evaluate the current policy in the given Environment
 evaluatePolicy :: Int -> Agent -> HymURL -> PERBuffer -> T.Tensor ->  Int
              -> IO (PERBuffer, T.Tensor, T.Tensor)
-evaluatePolicy iteration agent envUrl buffer states steps = do
-    evaluateStep iteration steps agent envUrl buffer states total
+evaluatePolicy iteration !agent envUrl !buffer obs steps = do
+    evaluateStep iteration steps agent envUrl buffer obs total
   where
     total = emptyTensor
     
@@ -350,48 +404,40 @@ runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> PERBuffer -> T.Tensor
              -> T.Tensor -> IO Agent
 runAlgorithm episode iteration agent _ True _ _ reward = do
     putStrLn $ "Episode " ++ show episode ++ " done after " ++ show iteration 
-             ++ " iterations, with a total reward of " ++ show reward'
+            ++ " iterations, with a total reward of " ++ show reward'
     saveAgent agent ptPath
-    return agent
+    pure agent
   where
     reward' = T.asValue . T.sumAll $ reward :: Float
     ptPath  = "./models/sac"
-runAlgorithm episode iteration agent envUrl _ buffer states total = do
-    (memories', states'', reward) <- evaluatePolicy iteration agent envUrl 
-                                                    buffer states numSteps
-    let reward' = T.cat (T.Dim 1) [total, reward]
-        buffer'' = perPush' buffer memories'
-        bufLen = bufferLength . memories $ buffer''
-    (buffer', agent') <- if bufLen < batchSize 
-                            then pure (buffer'', agent)
-                            else updatePolicy iteration agent buffer'' numEpochs
-    let dones' = T.squeezeAll . T.sliceDim 1 (bufLen - numEnvs) (bufLen - 1) 1 
-                             . dones . memories $ buffer'
-        done' = iteration >= numIterations
-    states' <- if T.any dones' then resetPool envUrl else pure states''
-
-    when (verbose && iteration `elem` [0,10 ..] && T.any dones') do
-        putStrLn $ "Environments done after " ++ show iteration 
-                ++ " iterations, resetting."
-
-    runAlgorithm episode iteration' agent' envUrl done' buffer' states' reward'
+runAlgorithm episode iteration !agent envUrl _ !buffer obs total = do
+    (!memories', !obs', !reward) <- evaluatePolicy iteration agent envUrl 
+                                                   buffer obs numSteps
+    let !reward'  = T.cat (T.Dim 1) [total, reward]
+        !buffer'' = perPush' buffer memories'
+        !bufLen   = bufferLength . memories $ buffer''
+    (!buffer', !agent') <- if bufLen < batchSize 
+                              then pure (buffer'', agent)
+                              else updatePolicy iteration agent buffer'' numEpochs
+    runAlgorithm episode iteration' agent' envUrl done' buffer' obs' reward'
   where
+    done'      = iteration >= numIterations
     iteration' = iteration + 1
 
 -- | Train Soft Actor Critic Agent
 train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
-    agent <- makeAgent obsDim actDim >>= foldLoop' numEpisodes
+    !agent <- makeAgent obsDim actDim >>= foldLoop' numEpisodes
         (\agent' episode -> do
-            obs  <- toFloatGPU <$> resetPool envUrl
+            obs' <- toFloatGPU <$> resetPool envUrl
             keys <- infoPool envUrl
 
-            let states = processGace obs keys
-                buffer = makePERBuffer bufferSize αStart βStart βFrames
-                reward = emptyTensor
+            let !obs    = processGace obs' keys
+                !buffer = makePERBuffer bufferSize αStart βStart βFrames
+                !reward = emptyTensor
 
-            runAlgorithm episode 0 agent' envUrl False buffer states reward)
+            runAlgorithm episode 0 agent' envUrl False buffer obs reward)
     saveAgent agent ptPath
-    return agent
+    pure agent
   where 
-      ptPath      = "./models/sac"
+      ptPath = "./models/sac"

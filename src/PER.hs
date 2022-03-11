@@ -88,9 +88,8 @@ data PERBuffer = PERBuffer { memories   :: !ReplayBuffer
 makePERBuffer :: Int -> Float -> Float -> Int -> PERBuffer
 makePERBuffer = PERBuffer buf prio
   where
-    opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     buf  = makeBuffer
-    prio = T.asTensor' ([] :: [Float]) opts
+    prio = emptyTensor
 
 -- | Push new memories in a Buffer
 perPush :: PERBuffer -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
@@ -98,7 +97,7 @@ perPush :: PERBuffer -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
 perPush (PERBuffer m p c a bs bf) s' a' r' n' d' = PERBuffer m' p' c a bs bf
   where
     m' = bufferPush c m s' a' r' n' d'
-    p' = (if bufferLength m > 0 then T.max p else 1.0) * T.onesLike r'
+    p' = (if bufferLength m > 0 then T.max p else 1.0) * T.onesLike (rewards m')
 
 -- | Syntactic Sugar for adding one buffer to another
 perPush' :: PERBuffer -> PERBuffer -> PERBuffer
@@ -118,14 +117,14 @@ perSample :: PERBuffer -> Int -> Int -> IO (ReplayBuffer, T.Tensor, T.Tensor)
 perSample (PERBuffer m p _ _ bs bf) frameIdx batchSize = do
     i <- T.toDevice gpu <$> T.multinomialIO p' batchSize False
     let s = bmap (T.indexSelect 0 i) m
-        w_ = T.pow (- b) (n * T.indexSelect 0 i p')
-        w = w_ / T.max w_
+        w' = T.pow (- b) (n * T.indexSelect 0 i p')
+        w = w' / T.max w'
     return (s, i, w)
   where
-    n = realToFrac $ bufferLength m
+    n   = realToFrac $ bufferLength m
     p'' = T.pow (2.0 :: Float) p
-    p' = T.squeezeAll $ p'' / T.sumAll p''
-    b = betaByFrame bs bf frameIdx
+    p'  = T.squeezeAll (p'' / T.sumAll p'')
+    b   = betaByFrame bs bf frameIdx
 
 -- | Update the Priorities of a Buffer
 perUpdate :: PERBuffer -> T.Tensor -> T.Tensor -> PERBuffer
