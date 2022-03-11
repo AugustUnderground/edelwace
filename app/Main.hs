@@ -15,7 +15,7 @@ import qualified SAC
 
 main :: IO ()
 main = do
-    putStrLn $ "Running " ++ SAC.algorithm
+    putStrLn $ "Training " ++ SAC.algorithm ++ " ACiD Agent"
     acid <- SAC.train obs act url
     SAC.saveAgent acid ptPath
     putStrLn "``'-.,_,.-'``'-.,_,.='``'-., DONE ,.-'``'-.,_,.='``'-.,_,.='``"

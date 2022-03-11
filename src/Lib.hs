@@ -2,6 +2,7 @@
 
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeApplications #-}
@@ -10,8 +11,9 @@
 
 module Lib where
 
-import qualified Data.ByteString.Lazy as BL
-import qualified Data.ByteString      as BS
+import qualified Data.ByteString.Lazy  as BL
+import qualified Data.ByteString       as BS hiding (pack)
+import qualified Data.ByteString.Char8 as BS (pack)
 import qualified Data.Map as M
 import Data.Char (isLower)
 import Data.List (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
@@ -19,10 +21,11 @@ import Data.Maybe (fromJust)
 import Data.Aeson
 import Network.Wreq
 import Control.Lens
+import Control.Monad
 import GHC.Generics
 import System.Directory
-import qualified Torch as T
-import qualified Torch.Lens as TL
+import qualified Torch                     as T
+import qualified Torch.Lens                as TL
 import qualified Torch.Functional.Internal as T (where')
 
 ------------------------------------------------------------------------------
@@ -186,6 +189,14 @@ acePoolActKeys url = fromJust . decodeStrict <$> hymGet url "action_keys"
 acePoolObsKeys :: HymURL -> IO (M.Map Int [String])
 acePoolObsKeys url = fromJust . decodeStrict <$> hymGet url "observation_keys"
 
+-- | Get the SHACE logging path as a dict
+shaceLogPath' :: HymURL -> IO (M.Map String String)
+shaceLogPath' url = fromJust . decodeStrict <$> hymGet url "log_path"
+
+-- | Get the SHACE logging path
+shaceLogPath :: HymURL -> IO String
+shaceLogPath url = fromJust . M.lookup "path" <$> shaceLogPath' url
+
 -- | Reset a Vectorized Environment Pool
 resetPool :: HymURL -> IO T.Tensor
 resetPool url = mapToTensor <$> hymPoolReset url
@@ -247,9 +258,63 @@ scaleRewards reward factor = reward'
     factor' = toTensor factor
     reward' = (reward - T.mean reward) / (T.std reward + factor')
  
+------------------------------------------------------------------------------
+-- Data Logging
+------------------------------------------------------------------------------
+
+-- | Create a log directory
+createLogDir :: FilePath -> IO ()
+createLogDir = createDirectoryIfMissing True
+
+-- | Setup the Logging Direcotry for SHACE
+setupLogging :: FilePath -> IO ()
+setupLogging remoteDir = do
+    localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
+    localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
+    BS.writeFile localLoss   "Episode,Iteration,Model,Loss\n"
+    BS.writeFile localReward "Episode,Iteration,Env,Reward\n"
+
+    createLogDir remoteDir
+
+    doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
+    doesFileExist remoteReward >>= flip when (removeFile remoteReward)
+
+    createFileLink localLoss   remoteLoss
+    createFileLink localReward remoteReward
+  where
+    remoteLoss   = remoteDir ++ "/loss.csv"
+    remoteReward = remoteDir ++ "/reward.csv"
+
+-- | Get SHACE Logging path to a given URL
+remoteLogPath :: HymURL -> IO FilePath
+remoteLogPath url = (++ "/model") <$> shaceLogPath url
+
+-- | Append a line to the give log file
+writeLoss :: Int -> Int -> String -> Float -> IO ()
+writeLoss episode iteration model loss = BS.appendFile path line
+  where
+    path = "./log/loss.csv"
+    line = BS.pack $ show episode ++ "," ++ show iteration ++ "," 
+                                  ++ model ++ "," ++ show loss ++ "\n"
+
+-- | Append a line to the give log file
+writeReward :: Int -> Int -> Int -> Float -> IO ()
+writeReward episode iteration env reward = BS.appendFile path line
+  where
+    path = "./log/reward.csv"
+    line = BS.pack $ show episode ++ "," ++ show iteration ++ "," ++ show env
+                                  ++ "," ++ show reward ++ "\n"
+
+-- | Convenience function for logging an entire env tensor
+writeReward' :: Int -> Int -> T.Tensor -> IO ()
+writeReward' episode iteration reward = mapM_ (uncurry $ writeReward episode iteration) 
+                                              (zip [0,1 ..] reward')
+  where
+    reward' = T.asValue . T.squeezeAll $ reward :: [Float]
+
 -- | Obtain current performance from a gace server and write/append to log
 writeEnvLog :: FilePath -> HymURL -> IO ()
-writeEnvLog logPath aceUrl = do
+writeEnvLog path aceUrl = do
     performance <- M.map (M.map (: [])) <$> hymPoolMap aceUrl performanceRoute 
     sizing <- M.map (M.map (: [])) <$> hymPoolMap aceUrl sizingRoute 
     let envData = M.unionWith M.union performance sizing
@@ -262,15 +327,15 @@ writeEnvLog logPath aceUrl = do
   where
     performanceRoute = "current_performance"
     sizingRoute      = "current_sizing"
-    jsonPath         = logPath ++ "/env.json"
+    jsonPath         = path ++ "/env.json"
 
 -- | Write an arbitrary Map to a log file for visualization
 writeLog :: FilePath -> M.Map String [Float] -> IO ()
-writeLog logPath logData = do
-    fex <- doesFileExist logPath
+writeLog path logData = do
+    fex <- doesFileExist path
     logData' <- if fex then M.unionWith (++) logData . fromJust . decodeStrict
                             <$> BS.readFile jsonPath
                        else return logData
     BL.writeFile jsonPath (encode logData')
   where
-    jsonPath = logPath ++ "/log.json"
+    jsonPath = path ++ "/log.json"
