@@ -220,25 +220,25 @@ processGace obs Info {..} = states
     ok     = filter (\k -> ((k `elem` actions) || (isLower . head $ k))
                         && not ("steps" `isInfixOf` k) 
                         && not ("vn_" `isPrefixOf` k)
+                        && not ("v_" `isPrefixOf` k)
                     ) observations
     idx    = T.toDType T.Int32 . toTensor 
            $ map (fromJust . flip elemIndex observations) ok
 
     idxI   = map (fromJust . flip elemIndex ok) 
-           $ filter (\i -> ("i" `isPrefixOf` i) || (":id" `isSuffixOf` i)) ok
+           $ filter (\i -> ("i_" `isPrefixOf` i) || (":id" `isSuffixOf` i)) ok
     mskI   = T.toDType T.Bool . toTensor $ map (`elem` idxI) [0 .. (length ok - 1)]
 
     frqs   = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
     idxF   = map (fromJust . flip elemIndex ok) 
            $ filter (\f -> not ("delta_" `isPrefixOf` f) 
-                        && (any (`isInfixOf` f) frqs
-                        || (":fug" `isSuffixOf` f))
+                        && (any (`isInfixOf` f) frqs || (":fug" `isSuffixOf` f))
                     ) ok
     mskF   = T.toDType T.Bool . toTensor $ map (`elem` idxF) [0 .. (length ok - 1)]
 
     obs'   = T.indexSelect 1 idx obs
-    obs''  = T.where' mskF obs' (T.log10 . T.abs $ obs')
-    states = T.where' mskI obs'' (obs'' * 1.0e6)
+    obs''  = T.where' mskF (T.log10 . T.abs $ obs') obs' 
+    states = T.where' mskI (obs'' * 1.0e6) obs'' 
 
 -- | Scale reward to center
 scaleRewards :: T.Tensor -> Float -> T.Tensor
