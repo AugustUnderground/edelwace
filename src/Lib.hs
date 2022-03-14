@@ -23,10 +23,12 @@ import Network.Wreq
 import Control.Lens
 import Control.Monad
 import GHC.Generics
+import GHC.Float (float2Double)
+import Numeric.Limits (maxValue, minValue)
 import System.Directory
 import qualified Torch                     as T
 import qualified Torch.Lens                as TL
-import qualified Torch.Functional.Internal as T (where')
+import qualified Torch.Functional.Internal as T (where', nan_to_num)
 
 ------------------------------------------------------------------------------
 -- Convenience / Syntactic Sugar
@@ -35,6 +37,30 @@ import qualified Torch.Functional.Internal as T (where')
 -- | Swaps the arguments of HaskTorch's foldLoop around
 foldLoop' :: Int -> (a -> Int -> IO a) -> a -> IO a
 foldLoop' i f m = T.foldLoop m i f
+
+-- | Because snake_case sucks
+nanToNum :: Float -> Float -> Float -> T.Tensor -> T.Tensor
+nanToNum nan' posinf' neginf' self = T.nan_to_num self nan posinf neginf
+  where
+    nan    = float2Double nan'
+    posinf = float2Double posinf'
+    neginf = float2Double neginf'
+
+-- | Default limits for `nanToNum`
+nanToNum' :: T.Tensor -> T.Tensor
+nanToNum' self = T.nan_to_num self nan posinf neginf
+  where
+    nan    = 0.0 :: Double
+    posinf = float2Double (maxValue :: Float)
+    neginf = float2Double (minValue :: Float)
+
+-- | Default limits for `nanToNum` (0.0)
+nanToNum'' :: T.Tensor -> T.Tensor
+nanToNum'' self = T.nan_to_num self nan posinf neginf
+  where
+    nan    = 0.0 :: Double
+    posinf = 0.0 :: Double
+    neginf = 0.0 :: Double
 
 ------------------------------------------------------------------------------
 -- Data Conversion
@@ -201,6 +227,13 @@ shaceLogPath url = fromJust . M.lookup "path" <$> shaceLogPath' url
 resetPool :: HymURL -> IO T.Tensor
 resetPool url = mapToTensor <$> hymPoolReset url
 
+-- | Reset selected Environments from Pool
+resetPool' :: HymURL -> T.Tensor -> IO T.Tensor
+resetPool' url mask = mapToTensor . fromJust . decodeStrict 
+                   <$> hymPost url "reset" payload
+  where
+    payload = toJSON (T.asValue (T.squeezeAll mask) ::[Bool])
+
 -- | Shorthand for getting keys of pooled same envs
 actKeysPool :: HymURL -> IO [String]
 actKeysPool url = fromJust . M.lookup 0 <$> acePoolActKeys url 
@@ -247,9 +280,13 @@ processGace obs Info {..} = states
                     ) ok
     mskF   = T.toDType T.Bool . toTensor $ map (`elem` idxF) [0 .. (length ok - 1)]
 
+    idxV   = map (fromJust . flip elemIndex ok) $ filter ("voff_" `isPrefixOf`) ok
+    mskV   = T.toDType T.Bool . toTensor $ map (`elem` idxV) [0 .. (length ok - 1)]
+
     obs'   = T.indexSelect 1 idx obs
     obs''  = T.where' mskF (T.log10 . T.abs $ obs') obs' 
-    states = T.where' mskI (obs'' * 1.0e6) obs'' 
+    obs''' = T.where' (T.logicalOr mskI mskV) (obs'' * 1.0e6) obs''
+    states = nanToNum'' obs'''
 
 -- | Scale reward to center
 scaleRewards :: T.Tensor -> Float -> T.Tensor

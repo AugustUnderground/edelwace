@@ -338,7 +338,8 @@ updatePolicy :: Int -> Int -> Agent -> PERBuffer -> Int -> IO (PERBuffer, Agent)
 updatePolicy episode iteration !agent !buffer epochs = do
     (memories, indices, weights) <- perSample buffer iteration batchSize
     let prios = priorities buffer
-    (agent', prios') <- updateStep episode iteration epochs agent memories weights prios
+    (agent', prios') <- updateStep episode iteration epochs agent 
+                                   memories weights prios
     let buffer' = perUpdate buffer indices prios'
     pure (buffer', agent')
 
@@ -356,7 +357,7 @@ evaluateStep episode iteration step agent envUrl buffer obs total = do
         total'  = T.cat (T.Dim 0) [total, rewards]
     
     obs' <- if T.any dones 
-               then flip processGace keys <$> resetPool envUrl 
+               then flip processGace keys <$> resetPool' envUrl dones
                else pure obs''
 
     writeReward' episode iteration rewards
@@ -365,8 +366,9 @@ evaluateStep episode iteration step agent envUrl buffer obs total = do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
     when (verbose && T.any dones) do
-        putStrLn $ "Environments done after " ++ show iteration 
-                ++ " iterations, resetting:\n\t" ++ show dones
+        let de = T.squeezeAll . T.nonzero $ dones
+        putStrLn $ "Environments " ++ " done after " ++ show iteration 
+                ++ " iterations, resetting:\n\t" ++ show de
 
     evaluateStep episode iteration step' agent envUrl buffer' obs' total'
   where
@@ -391,6 +393,7 @@ runAlgorithm episode iteration agent _ True _ _ reward = do
   where
     reward' = T.asValue . T.sumAll $ reward :: Float
     ptPath  = "./models/" ++ algorithm
+
 runAlgorithm episode iteration !agent envUrl _ !buffer obs total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
@@ -398,13 +401,16 @@ runAlgorithm episode iteration !agent envUrl _ !buffer obs total = do
     
     (!memories', !obs', !reward) <- evaluatePolicy episode iteration agent 
                                                    envUrl buffer obs numSteps
+
     let !reward'  = T.cat (T.Dim 1) [total, reward]
         !buffer'' = perPush' buffer memories'
         !bufLen   = bufferLength . memories $ buffer''
+
     (!buffer', !agent') <- if bufLen < batchSize 
                               then pure (buffer'', agent)
                               else updatePolicy episode iteration agent 
                                                 buffer'' numEpochs
+
     runAlgorithm episode iteration' agent' envUrl done' buffer' obs' reward'
   where
     done'      = iteration >= numIterations
