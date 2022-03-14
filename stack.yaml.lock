@@ -43,6 +43,13 @@ packages:
     subdir: libtorch-ffi-helper
     git: https://github.com/hasktorch/hasktorch.git
     commit: 5f97cd3fa1647092de85e4675aebdc3da1967098
+- completed:
+    hackage: asciichart-1.0.2@sha256:59b62adb30078dbf96677c17167d156b093c8a2eb93068e0d3a3bd24b5d14b30,1561
+    pantry-tree:
+      size: 273
+      sha256: 7a552767a6ceef966719e8aa05d2c3dc9957b7b96c1dffc94dce71aa1b853a8f
+  original:
+    hackage: asciichart-1.0.2@sha256:59b62adb30078dbf96677c17167d156b093c8a2eb93068e0d3a3bd24b5d14b30,1561
 snapshots:
 - completed:
     size: 587113

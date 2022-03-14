@@ -44,7 +44,6 @@ library
     , containers
     , directory
     , hasktorch
-    , hvega
     , lens
     , libtorch-ffi
     , mtl
@@ -66,7 +65,6 @@ executable edelwace-exe
     , directory
     , edelwace
     , hasktorch
-    , hvega
     , lens
     , libtorch-ffi
     , mtl
@@ -91,7 +89,6 @@ test-suite edelwace-test
     , directory
     , edelwace
     , hasktorch
-    , hvega
     , lens
     , libtorch-ffi
     , mtl

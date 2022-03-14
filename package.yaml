@@ -30,7 +30,6 @@ dependencies:
 - directory
 - wreq
 - aeson
-- hvega
 - random-fu
 - numeric-limits
   #- criterion

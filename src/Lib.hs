@@ -376,3 +376,7 @@ writeLog path logData = do
     BL.writeFile jsonPath (encode logData')
   where
     jsonPath = path ++ "/log.json"
+
+------------------------------------------------------------------------------
+-- Data Visualization
+------------------------------------------------------------------------------
