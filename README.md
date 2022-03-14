@@ -26,9 +26,9 @@ $ stack run
 - mtl
 - wreq
 - aeson
-- hvega
+- numeric-limits
 - random-fu
-  #- criterion
+- hvega
 
 ## Algorithms
 
