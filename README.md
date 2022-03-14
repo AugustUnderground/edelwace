@@ -5,6 +5,8 @@ Reinforcement Learning Algorithms for
 [Hym](https://github.com/AugustUnderground/hym) in Haskell with
 [HaskTorch](https://github.com/hasktorch/hasktorch).
 
+[Haddock](https://augustunderground.github.io/edelwace/)
+
 ## Setup
 
 LibTorch is required, as per HaskTorch Tutorial, and must be symlinked into
