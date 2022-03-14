@@ -32,6 +32,7 @@ dependencies:
 - aeson
 - hvega
 - random-fu
+- numeric-limits
   #- criterion
 
 library:
