@@ -1,21 +1,21 @@
 {-# OPTIONS_GHC -Wall #-}
 
-module RPB 
-    ( ReplayBuffer (..)
-    , makeBuffer
-    , bufferSample
-    , bufferRandomSample
-    , bufferPush
-    , bufferPush'
-    , bufferLength
-    , PERBuffer (..)
-    , makePERBuffer
-    , perPush
-    , perPush'
-    , perSample 
-    , perUpdate
-    , betaByFrame
-    ) where
+module RPB ( ReplayBuffer (..)
+           , makeBuffer
+           , bufferLength
+           , bufferPush
+           , bufferPush'
+           , bufferSample
+           , bufferRandomSample
+           , bmap
+           , PERBuffer (..)
+           , makePERBuffer
+           , perPush
+           , perPush'
+           , perSample 
+           , perUpdate
+           , betaByFrame
+           ) where
 
 import Lib
 

@@ -63,8 +63,8 @@ numEnvs    = 20
 ------------------------------------------------------------------------------
 
 -- | Factor for clipping
-ε :: T.Tensor
-ε  = toTensor (0.2 :: Float)
+ε :: Float
+ε  = 0.2
 -- | Factor in loss function
 δ :: T.Tensor
 δ  = toTensor (0.001 :: Float)
@@ -74,6 +74,14 @@ numEnvs    = 20
 -- | Avantage Factor
 τ :: T.Tensor
 τ  = toTensor (0.95 :: Float)
+
+------------------------------------------------------------------------------
+-- Neural Network Parameter Settings
+------------------------------------------------------------------------------
+
+-- | Initial weights
+wInit :: Float
+wInit = 3.0e-3
 -- | Learning Rate
 η :: T.Tensor
 η  = toTensor (1.0e-3 :: Float)

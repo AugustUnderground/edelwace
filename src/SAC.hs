@@ -34,7 +34,7 @@ import qualified Torch.NN as NN
 ------------------------------------------------------------------------------
 
 -- | Actor Network Specification
-data ActorNetSpec = ActorNetSpec { aObsDim :: Int, aActDim :: Int }
+data ActorNetSpec = ActorNetSpec { pObsDim :: Int, pActDim :: Int }
     deriving (Show, Eq)
 
 -- | Critic Network Specification
@@ -56,13 +56,13 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec aObsDim 256) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
                                              >>= weightInit' )
                                        <*> ( T.sample (T.LinearSpec 256     256)
                                              >>= weightInit' )
-                                       <*> ( T.sample (T.LinearSpec 256 aActDim)
+                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
                                              >>= weightInit wInit )
-                                       <*> ( T.sample (T.LinearSpec 256 aActDim)
+                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
                                              >>= weightInit wInit )
 
 -- | Critic Network Weight initialization
@@ -343,7 +343,6 @@ runAlgorithm episode iteration agent envUrl _ buffer obs total = do
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Episode " ++ show episode ++ ", Iteration " ++ show iteration
     
-    let total' = emptyTensor
     (!memories', !obs', !reward) <- evaluatePolicy episode iteration numSteps
                                                    agent envUrl buffer obs total'
 
@@ -358,6 +357,7 @@ runAlgorithm episode iteration agent envUrl _ buffer obs total = do
 
     runAlgorithm episode iteration' agent' envUrl done' buffer' obs' reward'
   where
+    total'     = emptyTensor
     done'      = iteration >= numIterations
     iteration' = iteration + 1
 

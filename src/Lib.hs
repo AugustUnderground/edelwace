@@ -208,6 +208,16 @@ prob Normal{..} x = (1.0 / (scale * T.sqrt (2.0 * π)))
 logProb :: Normal -> T.Tensor -> T.Tensor
 logProb n x = T.log $ prob n x
 
+-- | Maximum Entropy of Normal Distribution
+entropy :: Normal -> T.Tensor
+entropy Normal{..} = 0.5 * T.log (e * 2.0 * π * T.pow (2.0 :: Float) σ)
+  where
+    dev  = T.device loc
+    opts = T.withDType T.Float . T.withDevice dev $ T.defaultOpts
+    e    = T.asTensor' (exp 1 :: Float) opts
+    π    = T.asTensor' (pi :: Float) opts
+    σ    = scale
+    
 ------------------------------------------------------------------------------
 -- Hym Server Interaction
 ------------------------------------------------------------------------------

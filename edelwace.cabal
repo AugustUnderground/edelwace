@@ -31,6 +31,7 @@ library
       PPO
       PPO.Defaults
       RPB
+      RPM
       SAC
       SAC.Defaults
       TD3
