@@ -11,10 +11,6 @@
 
 module Lib where
 
-import qualified Data.ByteString.Lazy  as BL
-import qualified Data.ByteString       as BS hiding (pack)
-import qualified Data.ByteString.Char8 as BS (pack)
-import qualified Data.Map as M
 import Data.Char (isLower)
 import Data.List (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
 import Data.Maybe (fromJust)
@@ -26,9 +22,15 @@ import GHC.Generics
 import GHC.Float (float2Double)
 import Numeric.Limits (maxValue, minValue)
 import System.Directory
+import qualified Data.Map                  as M
+import qualified Data.ByteString.Lazy      as BL
+import qualified Data.ByteString           as BS hiding (pack)
+import qualified Data.ByteString.Char8     as BS (pack)
 import qualified Torch                     as T
+import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
 import qualified Torch.Functional.Internal as T (where', nan_to_num)
+import qualified Torch.Initializers        as T (xavierNormal)
 
 ------------------------------------------------------------------------------
 -- Convenience / Syntactic Sugar
@@ -61,6 +63,54 @@ nanToNum'' self = T.nan_to_num self nan posinf neginf
     nan    = 0.0 :: Double
     posinf = 0.0 :: Double
     neginf = 0.0 :: Double
+
+-- | GPU Tensor filled with Float value
+fullLike' :: T.Tensor -> Float -> T.Tensor
+fullLike' self num = T.onesLike self * toTensor num
+
+------------------------------------------------------------------------------
+-- Neural Networks
+------------------------------------------------------------------------------
+
+-- | Calculate weight Limits based on Layer Dimensions
+weightLimit :: T.Linear -> Float
+weightLimit layer = fanIn ** (- 0.5)
+  where
+    fanIn = realToFrac . head . T.shape . T.toDependent . NN.weight $ layer
+
+-- | Initialize Weights of Linear Layer
+weightInit :: Float -> T.Linear -> IO T.Linear
+weightInit limit layer = do
+    weight' <- T.xavierNormal limit dims >>= T.makeIndependent
+    pure T.Linear { NN.weight = weight', NN.bias = bias' }
+  where
+    dims  = T.shape . T.toDependent . NN.weight $ layer
+    bias' = NN.bias layer
+
+-- | Initialize weights based on Fan In
+weightInit' :: T.Linear -> IO T.Linear
+weightInit' layer = weightInit limit layer
+  where
+    limit = weightLimit layer
+
+-- | Softly update parameters from Online Net to Target Net
+softUpdate :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
+softUpdate τ t o = (t * (o' - τ)) + (o * τ)
+  where
+    o' = T.onesLike τ
+
+-- | Softly copy parameters from Online Net to Target Net
+softSync :: NN.Parameterized f => T.Tensor -> f -> f -> IO f
+softSync τ target online =  NN.replaceParameters target 
+                        <$> mapM T.makeIndependent tUpdate 
+  where
+    tParams = fmap T.toDependent . NN.flattenParameters $ target
+    oParams = fmap T.toDependent . NN.flattenParameters $ online
+    tUpdate = zipWith (softUpdate τ) tParams oParams
+
+-- | Hard Copy of Parameter from one net to the other
+copySync :: NN.Parameterized f => f -> f -> f
+copySync target =  NN.replaceParameters target . NN.flattenParameters
 
 ------------------------------------------------------------------------------
 -- Data Conversion
@@ -114,11 +164,49 @@ toFloatCPU = over (TL.types @ T.Tensor @a) opts
   where
     opts = T.toDevice gpu . T.toType T.Float
 
+------------------------------------------------------------------------------
+-- Statistics
+------------------------------------------------------------------------------
+
 -- | Generate a Tensor of random Integers
 randomInts :: Int -> Int -> Int -> IO T.Tensor
 randomInts lo hi num = T.randintIO lo hi [num] opts 
   where
     opts = T.withDType T.Int64 . T.withDevice gpu $ T.defaultOpts
+
+-- | Generate Normally Distributed Random values given dimensions
+normal' :: [Int] -> IO T.Tensor
+normal' dims = T.randnIO dims opts
+  where
+    opts = T.withDType T.Float . T.withDevice gpu $ T.defaultOpts
+
+-- | Generate Normally Distributed Random values given μs and σs
+normal :: T.Tensor -> T.Tensor -> IO T.Tensor
+normal μ σ = toFloatGPU <$> T.normalIO μ σ
+
+-- | Normal Distribution until HaskTorch brings it's own
+data Normal = Normal { loc   :: T.Tensor
+                     , scale :: T.Tensor  
+                     } deriving (Generic, Show)
+
+-- | Sample from Normal Distribution
+sample :: Normal -> IO T.Tensor
+sample Normal{..} = do
+    x <- T.randnLikeIO loc
+    pure $ x * scale + loc
+
+-- | PDF for given Normal Distribution
+prob :: Normal -> T.Tensor -> T.Tensor
+prob Normal{..} x = (1.0 / (scale * T.sqrt (2.0 * π)))
+                  * T.exp ((- 0.5) * T.pow (2.0 :: Float) ((x - loc) / scale))
+  where
+    dev = T.device loc
+    opts = T.withDType T.Float . T.withDevice dev $ T.defaultOpts
+    π = T.asTensor' (pi :: Float) opts
+
+-- | logarithmic probabilites for given Normal Distribution
+logProb :: Normal -> T.Tensor -> T.Tensor
+logProb n x = T.log $ prob n x
 
 ------------------------------------------------------------------------------
 -- Hym Server Interaction
@@ -132,10 +220,10 @@ instance FromJSON Info
 instance ToJSON Info
 
 -- | Environment Step
-data Step = Step { observation  :: ![Float]
-                 , reward       :: !Float
-                 , done         :: !Bool
-                 , info         :: !Info 
+data Step = Step { observation :: ![Float]
+                 , reward      :: !Float
+                 , done        :: !Bool
+                 , info        :: !Info 
                  } deriving (Generic, Show)
 instance FromJSON Step
 instance ToJSON Step
@@ -253,6 +341,14 @@ infoPool url = do
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
 
+-- | Take a random Step an Environment
+randomStepPool :: HymURL -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
+randomStepPool url = stepsToTuple <$> hymPoolRandomStep url
+
+-- | Get a set of random actions from the current environment
+randomActionPool :: HymURL -> IO T.Tensor
+randomActionPool url = mapToTensor <$> hymPoolRandomAction url
+
 ------------------------------------------------------------------------------
 -- Data Processing
 ------------------------------------------------------------------------------
@@ -289,11 +385,8 @@ processGace obs Info {..} = states
     states = nanToNum'' obs'''
 
 -- | Scale reward to center
-scaleRewards :: T.Tensor -> Float -> T.Tensor
-scaleRewards reward factor = reward'
-  where
-    factor' = toTensor factor
-    reward' = (reward - T.mean reward) / (T.std reward + factor')
+scaleRewards :: T.Tensor -> T.Tensor -> T.Tensor
+scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor)
  
 ------------------------------------------------------------------------------
 -- Data Logging
