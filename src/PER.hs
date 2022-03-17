@@ -6,6 +6,7 @@ module PER
     , bufferSample
     , bufferRandomSample
     , bufferPush
+    , bufferPush'
     , bufferLength
     , PERBuffer (..)
     , makePERBuffer
@@ -62,6 +63,10 @@ bufferPush cap (ReplayBuffer s a r n d) s' a' r' n' d' = buf
                                                             [s',a',r',n',d']
     buf     = ReplayBuffer s'' a'' r'' n'' d''
 
+-- | Pushing one buffer into another one
+bufferPush' :: Int -> ReplayBuffer -> ReplayBuffer -> ReplayBuffer
+bufferPush' cap buf (ReplayBuffer s a r n d) = bufferPush cap buf s a r n d
+
 -- | Get the given indices from Buffer
 bufferSample :: ReplayBuffer -> T.Tensor -> ReplayBuffer
 bufferSample (ReplayBuffer s a r n d) idx = ReplayBuffer s' a' r' n' d'
@@ -69,8 +74,8 @@ bufferSample (ReplayBuffer s a r n d) idx = ReplayBuffer s' a' r' n' d'
     [s',a',r',n',d'] = map (T.indexSelect 0 idx) [s,a,r,n,d]
 
 -- | Uniform random sample from Replay Buffer
-bufferRandomSample :: ReplayBuffer -> Int -> IO ReplayBuffer
-bufferRandomSample buf batchSize = bufferSample buf 
+bufferRandomSample :: Int -> ReplayBuffer -> IO ReplayBuffer
+bufferRandomSample batchSize buf = bufferSample buf 
                                 <$> T.multinomialIO i' batchSize False
   where
     i' = T.ones' [bufferLength buf]
