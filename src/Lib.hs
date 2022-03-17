@@ -320,7 +320,9 @@ resetPool' :: HymURL -> T.Tensor -> IO T.Tensor
 resetPool' url mask = mapToTensor . fromJust . decodeStrict 
                    <$> hymPost url "reset" payload
   where
-    payload = toJSON (T.asValue (T.squeezeAll mask) :: [Bool])
+    mask' = T.asValue (T.squeezeAll mask) :: [Bool]
+    dict = M.fromList [("done_mask", mask')] :: M.Map String [Bool]
+    payload = toJSON dict
 
 -- | Shorthand for getting keys of pooled same envs
 actKeysPool :: HymURL -> IO [String]
