@@ -243,10 +243,12 @@ tensorToMap = M.fromList . zip [0 .. ] . T.asValue
 stepsToTuple :: M.Map Int Step -> (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepsToTuple steps = (obs, rew, don, inf)
   where
-    obs =                    toTensor . M.elems . M.map observation $ steps
-    rew = T.reshape [-1,1] . toTensor . M.elems . M.map reward      $ steps
-    don = T.reshape [-1,1] . toTensor . M.elems . M.map done        $ steps
-    inf =                               M.elems . M.map info        $ steps
+    opts = T.withDType T.Bool . T.withDevice gpu $ T.defaultOpts
+    obs  =                    toTensor . M.elems . M.map observation      $ steps
+    rew  = T.reshape [-1,1] . toTensor . M.elems . M.map reward           $ steps
+    --don  = T.reshape [-1,1] . toTensor . M.elems . M.map done        $ steps
+    don  = T.reshape [-1,1] . (`T.asTensor'` opts) . M.elems . M.map done $ steps
+    inf  =                               M.elems . M.map info             $ steps
 
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO BS.ByteString

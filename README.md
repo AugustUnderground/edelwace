@@ -29,7 +29,7 @@ $ stack run
 
 ## Algorithms
 
-Excessive use of Unicode.
+Excessive use of Unicode and Strictness.
 
 ### SAC
 
@@ -50,8 +50,10 @@ Excessive use of Unicode.
 ## TODO
 
 - [X] Implement SAC
-- [ ] Implement TD3
+- [X] Implement TD3
 - [ ] Implement PPO
 - [X] Implement PER
 - [ ] Visualization
 - [ ] Wait for Normal Distribution in HaskTorch
+- [ ] Remove strictness where unecessary
+- [ ] Add agent loading ability

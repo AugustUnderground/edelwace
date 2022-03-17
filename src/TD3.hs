@@ -19,7 +19,7 @@ module TD3 ( algorithm
            ) where
 
 import Lib
-import PER
+import RPB
 import TD3.Defaults
 
 import Control.Monad

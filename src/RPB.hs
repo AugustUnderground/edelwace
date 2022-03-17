@@ -1,6 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 
-module PER 
+module RPB 
     ( ReplayBuffer (..)
     , makeBuffer
     , bufferSample

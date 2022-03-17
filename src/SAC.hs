@@ -20,7 +20,7 @@ module SAC ( algorithm
            ) where
 
 import Lib
-import PER
+import RPB
 import SAC.Defaults
 
 import Control.Monad
@@ -76,27 +76,27 @@ instance T.Randomizable CriticNetSpec CriticNet where
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> (T.Tensor, T.Tensor)
-π ActorNet{..} !s = (μ, σ)
+π ActorNet{..} s = (μ, σ)
   where
-    !x = T.linear pLayer1 . T.relu
-       . T.linear pLayer0 $ s
-    !μ = T.linear pLayerμ x
-    !σ = T.clamp σMin σMax . T.linear pLayerσ $ x
+    x = T.linear pLayer1 . T.relu
+      . T.linear pLayer0 $ s
+    μ = T.linear pLayerμ x
+    σ = T.clamp σMin σMax . T.linear pLayerσ $ x
 
 -- | Critic Network Forward Pass
 q :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q CriticNet{..} !s !a = T.linear qLayer2 . T.relu
-                      . T.linear qLayer1 . T.relu
-                      . T.linear qLayer0 $ x
+q CriticNet{..} s a = T.linear qLayer2 . T.relu
+                    . T.linear qLayer1 . T.relu
+                    . T.linear qLayer0 $ x
   where
-    !x = T.cat (T.Dim $ -1) [s,a]
+    x = T.cat (T.Dim $ -1) [s,a]
 
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q' !c1 !c2 !s !a = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
+q' c1 c2 s a = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
   where
-    !q1 = q c1 s a
-    !q2 = q c2 s a
+    q1 = q c1 s a
+    q2 = q c2 s a
 
 ------------------------------------------------------------------------------
 -- SAC Agent
@@ -302,14 +302,19 @@ evaluatePolicy _ _ 0 _ _ buffer obs total = pure (buffer, obs, total)
 evaluatePolicy episode iteration step agent envUrl buffer obs total = do
 
     actions <- act agent obs
-    (obs'', rewards, dones, infos) <- stepPool envUrl actions
+    (!obs'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
     let keys    = head infos
         total'  = T.cat (T.Dim 0) [total, rewards]
-    
-    obs' <- if T.any dones 
-               then flip processGace keys <$> resetPool' envUrl dones
-               else pure $ processGace obs'' keys
+ 
+    when (verbose && T.any dones) do
+        let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+        putStrLn $ "Environments " ++ " done after " ++ show iteration 
+                ++ " iterations, resetting:\n\t" ++ show de
+   
+    !obs' <- if T.any dones 
+                then flip processGace keys <$> resetPool' envUrl dones
+                else pure $ processGace obs'' keys
 
     let buffer' = perPush buffer obs actions rewards obs' dones
 
@@ -317,11 +322,6 @@ evaluatePolicy episode iteration step agent envUrl buffer obs total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
-
-    when (verbose && T.any dones) do
-        let de = T.squeezeAll . T.nonzero $ dones
-        putStrLn $ "Environments " ++ " done after " ++ show iteration 
-                ++ " iterations, resetting:\n\t" ++ show de
 
     evaluatePolicy episode iteration step' agent envUrl buffer' obs' total'
   where
@@ -337,7 +337,7 @@ runAlgorithm episode iteration agent _ True _ _ reward = do
   where
     reward' = T.asValue . T.sumAll $ reward :: Float
 
-runAlgorithm episode iteration !agent envUrl _ !buffer obs total = do
+runAlgorithm episode iteration agent envUrl _ buffer obs total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Episode " ++ show episode ++ ", Iteration " ++ show iteration
