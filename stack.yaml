@@ -16,7 +16,6 @@ extra-deps:
       - hasktorch
       - libtorch-ffi
       - libtorch-ffi-helper
-  - asciichart-1.0.2@sha256:59b62adb30078dbf96677c17167d156b093c8a2eb93068e0d3a3bd24b5d14b30,1561
 
 extra-include-dirs:
   - libtorch/include/torch/csrc/api/include

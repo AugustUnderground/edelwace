@@ -25,13 +25,13 @@ dependencies:
 - libtorch-ffi
 - mtl
 - lens
+- wreq
 - bytestring
+- aeson
 - containers
 - directory
-- wreq
-- aeson
-- random-fu
 - numeric-limits
+  #- hvega
   #- criterion
 
 library:

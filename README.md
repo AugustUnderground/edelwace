@@ -21,18 +21,17 @@ $ stack build
 $ stack run
 ```
 
-## Requirements
+### Dependencies
 
 - hasktorch
 - libtorch-ffi
 - mtl
 - wreq
 - aeson
-- numeric-limits
-- random-fu
-- hvega
 
 ## Algorithms
+
+Excessive use of Unicode.
 
 ### SAC
 
@@ -49,3 +48,12 @@ $ stack run
 ## Results
 
 ...
+
+## TODO
+
+- [X] Implement SAC
+- [ ] Implement TD3
+- [ ] Implement PPO
+- [X] Implement PER
+- [ ] Visualization
+- [ ] Wait for Normal Distribution in HaskTorch
