@@ -3,6 +3,7 @@
 module TD3.Defaults where
 
 import Lib
+
 import qualified Torch as T
 
 ------------------------------------------------------------------------------

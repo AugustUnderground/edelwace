@@ -19,4 +19,66 @@ verbose       = True
 -- | Number of episodes to play
 numEpisodes :: Int
 numEpisodes   = 666
+-- | How many steps to take in env
+numSteps :: Int
+numSteps      = 13
+-- | How many gradient update steps
+numEpochs :: Int
+numEpochs     = 20
+-- | Number of iterations
+numIterations :: Int
+numIterations = 150
+-- | Early stop criterion
+earlyStop :: Float
+earlyStop     = -500.0
+-- | Size of the batches during epoch
+batchSize :: Int
+batchSize     = 64
+-- | Random seed for reproducability
+rngSeed :: Int
+rngSeed       = 666
+-- | Maximum time to cut off
+maxTime :: Float
+maxTime       = 20.0
 
+------------------------------------------------------------------------------
+--  ACE Environment Settings
+------------------------------------------------------------------------------
+
+-- | ACE Identifier of the Environment
+aceId :: String
+aceId      = "op2"
+-- | PDK/Technology backend of the ACE Environment
+aceBackend :: String
+aceBackend = "xh035"
+-- | ACE Environment variant
+aceVariant :: Int
+aceVariant = 0
+-- | Number of Environments
+numEnvs :: Int
+numEnvs    = 20
+
+------------------------------------------------------------------------------
+--  PPO Algorithm Hyper Parameters
+------------------------------------------------------------------------------
+
+-- | Factor for clipping
+ε :: T.Tensor
+ε  = toTensor (0.2 :: Float)
+-- | Factor in loss function
+δ :: T.Tensor
+δ  = toTensor (0.001 :: Float)
+-- | Discount Factor
+γ :: T.Tensor
+γ  = toTensor (0.99 :: Float)
+-- | Avantage Factor
+τ :: T.Tensor
+τ  = toTensor (0.95 :: Float)
+-- | Learning Rate
+η :: T.Tensor
+η  = toTensor (1.0e-3 :: Float)
+-- | Betas
+β1 :: Float
+β1 = 0.9
+β2 :: Float
+β2 = 0.999

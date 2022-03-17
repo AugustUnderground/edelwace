@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wall #-}
+
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE BlockArguments #-}
