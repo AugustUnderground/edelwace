@@ -27,7 +27,7 @@ main = do
     aceVariant = "0"
     url        = aceURL host port aceID aceBackend aceVariant
     act        = 10
-    obs        = 46
+    obs        = 42
     ptPath     = "./models/sac"
 
 -- main :: IO()

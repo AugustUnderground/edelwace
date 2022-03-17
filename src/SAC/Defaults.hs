@@ -3,7 +3,6 @@
 module SAC.Defaults where
 
 import Lib
-
 import qualified Torch as T
 
 ------------------------------------------------------------------------------
@@ -59,18 +58,18 @@ numEnvs :: Int
 numEnvs    = 20
 
 ------------------------------------------------------------------------------
---  SAC Algorithm Parameter Settings
+--  SAC Algorithm Hyper Parameters
 ------------------------------------------------------------------------------
 
 -- | Discount Factor
-γ :: Float
-γ           = 0.99
+γ :: T.Tensor
+γ           = toTensor (0.99 :: Float)
 -- | Smoothing Coefficient
-τSoft :: Float
-τSoft       = 1.0e-2
+τ :: T.Tensor
+τ           = toTensor (1.0e-2 :: Float)
 -- | Action Noise
-εNoise :: Float
-εNoise      = 1.0e-6
+εNoise :: T.Tensor
+εNoise      = toTensor (1.0e-6 :: Float)
 -- | Temperature Parameter
 αConst :: Float
 αConst      = 0.2   -- 3.0e-4
@@ -84,14 +83,14 @@ numEnvs    = 20
 rewardScale :: Float
 rewardScale = 5.0
 -- | Reward Scaling Factor
-ρ :: Float
-ρ           = 1.0e-3
+ρ :: T.Tensor
+ρ           = toTensor (1.0e-3 :: Float)
 -- | Update Step frequency
 d :: Int
 d = 1
 -- | Priority update factor
-εConst :: Float
-εConst      = 1.0e-5
+εConst :: T.Tensor
+εConst      = toTensor (1.0e-5 :: Float)
 
 ------------------------------------------------------------------------------
 -- Neural Network Parameter Settings
