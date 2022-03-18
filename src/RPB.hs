@@ -1,5 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
 
+{-# LANGUAGE RecordWildCards #-}
+
 module RPB ( ReplayBuffer (..)
            , makeBuffer
            , bufferLength
@@ -7,7 +9,6 @@ module RPB ( ReplayBuffer (..)
            , bufferPush'
            , bufferSample
            , bufferRandomSample
-           , bmap
            , PERBuffer (..)
            , makePERBuffer
            , perPush
@@ -15,6 +16,15 @@ module RPB ( ReplayBuffer (..)
            , perSample 
            , perUpdate
            , betaByFrame
+           , ReplayMemory (..)
+           , makeMemory
+           , memoryLength
+           , memoryPush
+           , memoryPush'
+           , gae
+           , MemoryLoader (..)
+           , dataLoader
+           , loaderLength
            ) where
 
 import Lib
@@ -27,85 +37,97 @@ import qualified Torch.Functional.Internal as T (indexAdd)
 ------------------------------------------------------------------------------
 
 -- | Strict Simple/Naive Replay Buffer
-data ReplayBuffer = ReplayBuffer { states  :: !T.Tensor
-                                 , actions :: !T.Tensor
-                                 , rewards :: !T.Tensor
-                                 , states' :: !T.Tensor
-                                 , dones   :: !T.Tensor
-                                 } deriving (Show, Eq)
+data ReplayBuffer a = ReplayBuffer { rpbStates  :: !a
+                                   , rpbActions :: !a
+                                   , rpbRewards :: !a
+                                   , rpbStates' :: !a
+                                   , rpbDones   :: !a
+                                   } deriving (Show, Eq)
+
+instance Functor ReplayBuffer where
+  fmap f (ReplayBuffer s a r s' d) = ReplayBuffer (f s) (f a) (f r) (f s') (f d)
 
 -- | Create a new, empty Buffer on the CPU
-makeBuffer :: ReplayBuffer
+makeBuffer :: ReplayBuffer T.Tensor
 makeBuffer = ReplayBuffer ft ft ft ft bt
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts
     bt   = T.asTensor' ([] :: [Bool]) opts
 
--- | Sorta like fmap but specifically for Replay Buffers
-bmap :: (T.Tensor -> T.Tensor) -> ReplayBuffer -> ReplayBuffer
-bmap f (ReplayBuffer s a r s' d) = ReplayBuffer (f s) (f a) (f r) (f s') (f d)
-
 -- | How many Trajectories are currently stored in memory
-bufferLength :: ReplayBuffer -> Int
-bufferLength = head . T.shape . states
+bufferLength :: ReplayBuffer T.Tensor -> Int
+bufferLength = head . T.shape . rpbStates
+
+-- | Drop number of entries from the beginning of the Buffer
+bufferDrop :: Int -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor
+bufferDrop cap buf = fmap (T.indexSelect 0 idx) buf
+  where
+    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+    len = bufferLength buf
+    idx' = if len < cap 
+              then ([0 .. (len - 1)] :: [Int])
+              else ([(len - cap) .. (len - 1)] :: [Int])
+    idx = T.asTensor' idx' opts
 
 -- | Push new memories into Buffer
-bufferPush :: Int -> ReplayBuffer -> T.Tensor -> T.Tensor -> T.Tensor 
-                  -> T.Tensor -> T.Tensor -> ReplayBuffer
+bufferPush :: Int -> ReplayBuffer T.Tensor-> T.Tensor -> T.Tensor -> T.Tensor 
+           -> T.Tensor -> T.Tensor -> ReplayBuffer T.Tensor
 bufferPush cap (ReplayBuffer s a r n d) s' a' r' n' d' = buf
   where
-    dim     = T.Dim 0
-    drop' t = T.sliceDim 0 (flip (-) cap . head .T.shape $ t) 
-                           (head . T.shape $ t) 1 t
-    [s'',a'',r'',n'',d''] = map (drop' . T.cat dim) 
-                          $ zipWith (\src tgt -> [src,tgt]) [s,a,r,n,d] 
-                                                            [s',a',r',n',d']
-    buf     = ReplayBuffer s'' a'' r'' n'' d''
+    dim = T.Dim 0
+    s'' = T.cat dim [s, s']
+    a'' = T.cat dim [a, a']
+    r'' = T.cat dim [r, r']
+    n'' = T.cat dim [n, n']
+    d'' = T.cat dim [d, d']
+    buf = bufferDrop cap (ReplayBuffer s'' a'' r'' n'' d'')
 
 -- | Pushing one buffer into another one
-bufferPush' :: Int -> ReplayBuffer -> ReplayBuffer -> ReplayBuffer
+bufferPush' :: Int -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor 
+            -> ReplayBuffer T.Tensor
 bufferPush' cap buf (ReplayBuffer s a r n d) = bufferPush cap buf s a r n d
 
 -- | Get the given indices from Buffer
-bufferSample :: ReplayBuffer -> T.Tensor -> ReplayBuffer
-bufferSample (ReplayBuffer s a r n d) idx = ReplayBuffer s' a' r' n' d'
-  where
-    [s',a',r',n',d'] = map (T.indexSelect 0 idx) [s,a,r,n,d]
+bufferSample :: T.Tensor -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor
+bufferSample idx = fmap (T.indexSelect 0 idx)
 
 -- | Uniform random sample from Replay Buffer
-bufferRandomSample :: Int -> ReplayBuffer -> IO ReplayBuffer
-bufferRandomSample batchSize buf = bufferSample buf 
+bufferRandomSample :: Int -> ReplayBuffer T.Tensor -> IO (ReplayBuffer T.Tensor)
+bufferRandomSample batchSize buf = (`bufferSample` buf)
                                 <$> T.multinomialIO i' batchSize False
   where
-    i' = T.ones' [bufferLength buf]
+    i' = toFloatGPU $ T.ones' [bufferLength buf]
 
 -- | Strict Prioritized Experience Replay Buffer
-data PERBuffer = PERBuffer { memories   :: !ReplayBuffer
-                           , priorities :: !T.Tensor
-                           , capacity   :: !Int
-                           , alpha      :: !Float
-                           , betaStart  :: !Float
-                           , betaFrames :: !Int 
-                           } deriving (Show, Eq)
+data PERBuffer a = PERBuffer { perMemories   :: ReplayBuffer a
+                             , perPriorities :: !T.Tensor
+                             , perCapacity   :: !Int
+                             , perAlpha      :: !Float
+                             , perBetaStart  :: !Float
+                             , perBetaFrames :: !Int 
+                             } deriving (Show, Eq)
+
+instance Functor PERBuffer where
+  fmap f (PERBuffer m p c a bs bf) = PERBuffer (fmap f m) p c a bs bf
 
 -- | Create an empty PER Buffer
-makePERBuffer :: Int -> Float -> Float -> Int -> PERBuffer
+makePERBuffer :: Int -> Float -> Float -> Int -> PERBuffer T.Tensor
 makePERBuffer = PERBuffer buf prio
   where
     buf  = makeBuffer
     prio = emptyTensor
 
 -- | Push new memories in a Buffer
-perPush :: PERBuffer -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
-        -> T.Tensor -> PERBuffer
+perPush :: PERBuffer T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
+        -> T.Tensor -> PERBuffer T.Tensor
 perPush (PERBuffer m p c a bs bf) s' a' r' n' d' = PERBuffer m' p' c a bs bf
   where
     m' = bufferPush c m s' a' r' n' d'
-    p' = (if bufferLength m > 0 then T.max p else 1.0) * T.onesLike (rewards m')
+    p' = (if bufferLength m > 0 then T.max p else 1.0) * T.onesLike (rpbRewards m')
 
 -- | Syntactic Sugar for adding one buffer to another
-perPush' :: PERBuffer -> PERBuffer -> PERBuffer
+perPush' :: PERBuffer T.Tensor -> PERBuffer T.Tensor -> PERBuffer T.Tensor
 perPush' buffer (PERBuffer (ReplayBuffer s a r s' d) _ _ _ _ _) 
     = perPush buffer s a r s' d
 
@@ -118,10 +140,11 @@ betaByFrame bs bf frameIdx = min 1.0 b'
     b' = bs + fi  * (1.0 - bs) / bf'
 
 -- | Take a prioritized sample from the Buffer
-perSample :: PERBuffer -> Int -> Int -> IO (ReplayBuffer, T.Tensor, T.Tensor)
+perSample :: PERBuffer T.Tensor -> Int -> Int 
+          -> IO (ReplayBuffer T.Tensor, T.Tensor, T.Tensor)
 perSample (PERBuffer m p _ _ bs bf) frameIdx batchSize = do
     i <- T.toDevice gpu <$> T.multinomialIO p' batchSize False
-    let s = bmap (T.indexSelect 0 i) m
+    let s = fmap (T.indexSelect 0 i) m
         w' = T.pow (- b) (n * T.indexSelect 0 i p')
         w = w' / T.max w'
     return (s, i, w)
@@ -132,8 +155,114 @@ perSample (PERBuffer m p _ _ bs bf) frameIdx batchSize = do
     b   = betaByFrame bs bf frameIdx
 
 -- | Update the Priorities of a Buffer
-perUpdate :: PERBuffer -> T.Tensor -> T.Tensor -> PERBuffer
+perUpdate :: PERBuffer T.Tensor -> T.Tensor -> T.Tensor -> PERBuffer T.Tensor
 perUpdate (PERBuffer m p c a bs bf) idx prio = buf'
   where
     p' = T.indexAdd (T.indexAdd p 0 idx (-1.0 * T.indexSelect 0 idx p)) 0 idx prio
     buf' = PERBuffer m p' c a bs bf
+
+------------------------------------------------------------------------------
+-- Replay Memory
+------------------------------------------------------------------------------
+
+-- | Replay Memory
+data ReplayMemory a = ReplayMemory { memStates   :: !a
+                                   , memActions  :: !a
+                                   , memLogPorbs :: !a
+                                   , memRewards  :: !a
+                                   , memValues   :: !a
+                                   , memMasks    :: !a
+                                   } deriving (Show, Eq)
+
+instance Functor ReplayMemory where
+  fmap f (ReplayMemory s a l r v m) = ReplayMemory (f s) (f a) (f l) (f r) (f v) (f m)
+
+-- | Create a new, empty Buffer on the CPU
+makeMemory :: ReplayMemory T.Tensor
+makeMemory = ReplayMemory ft ft ft ft ft bt
+  where
+    opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
+    ft   = T.asTensor' ([] :: [Float]) opts
+    bt   = T.asTensor' ([] :: [Bool]) opts
+
+-- | How many Trajectories are currently stored in memory
+memoryLength :: ReplayMemory T.Tensor -> Int
+memoryLength = head . T.shape . memStates
+
+-- | Push new memories into Buffer
+memoryPush :: ReplayMemory T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
+           -> T.Tensor -> T.Tensor -> ReplayMemory T.Tensor
+memoryPush (ReplayMemory s a l r v m) s' a' l' r' v' m' = mem
+  where
+    dim = T.Dim 0
+    s'' = T.cat dim [s, s']
+    a'' = T.cat dim [a, a']
+    l'' = T.cat dim [l, l']
+    r'' = T.cat dim [r, r']
+    v'' = T.cat dim [v, v']
+    m'' = T.cat dim [m, m']
+    mem = ReplayMemory s'' a'' l'' r'' v'' m''
+
+-- | Pushing one buffer into another one
+memoryPush' :: ReplayMemory T.Tensor -> ReplayMemory T.Tensor 
+            -> ReplayMemory T.Tensor
+memoryPush' mem (ReplayMemory s a l r v m) = memoryPush mem s a l r v m
+
+-- | Generalized Advantage Estimate
+gae :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
+    -> T.Tensor
+gae r v m v' γ τ = a
+  where
+    δ = r + γ * v' * m - v
+    l = reverse [0 .. (head . T.shape $ δ) - 1]
+    i = toTensor ([0.0] :: [Float])
+    z = toIntTensor (0 :: Int)
+    gae' :: T.Tensor -> Int -> T.Tensor
+    gae' g' i' = T.cat (T.Dim 0) [e, g']
+      where  
+        δ'  = T.indexSelect 0 (toIntTensor i') δ
+        m'  = T.indexSelect 0 (toIntTensor i') m
+        g'' = T.indexSelect 0 z g'
+        e   = δ' + γ * τ * m' *  g''
+    g = T.sliceDim 0 0 (- 1) 1 $ foldl gae' i l
+    a = v + g
+
+------------------------------------------------------------------------------
+-- Replay Memory Data Loader
+------------------------------------------------------------------------------
+
+-- | Memory Data Loader
+data MemoryLoader a = MemoryLoader { loaderStates     :: !a
+                                   , loaderActions    :: !a
+                                   , loaderLogPorbs   :: !a
+                                   , loaderReturns    :: !a
+                                   , loaderAdvantages :: !a
+                                   } deriving (Show, Eq)
+
+instance Functor MemoryLoader where
+  fmap f (MemoryLoader s a l r a') = MemoryLoader (f s) (f a) (f l) (f r) (f a')
+
+-- | How many Trajectories are currently stored in memory
+loaderLength :: MemoryLoader [T.Tensor] -> Int
+loaderLength = length . loaderStates
+
+-- | Turn Replay memory into chunked data loader
+dataLoader :: ReplayMemory T.Tensor -> Int -> T.Tensor -> T.Tensor 
+           -> MemoryLoader [T.Tensor]
+dataLoader mem bs' γ τ = loader
+  where
+    len        = memoryLength mem
+    mem'       = T.sliceDim 0 0 (-1) 1 <$> mem
+    values'    = T.squeezeAll $ T.sliceDim 0 1 len 1 (memValues mem)
+    rewards    = T.squeezeAll $ memRewards mem'
+    values     = T.squeezeAll $ memValues mem'
+    masks      = T.squeezeAll $ memMasks mem'
+    returns    = gae rewards values masks values' γ τ
+    advantages = returns - values
+    bl         = realToFrac len :: Float
+    bs         = realToFrac bs' :: Float
+    chunks     = (ceiling $ bl / bs) :: Int
+    loader     = T.chunk chunks (T.Dim 0) 
+              <$> MemoryLoader (memStates mem') (memActions mem') 
+                               (memLogPorbs mem') (T.reshape [-1,1] returns) 
+                               (T.reshape[-1,1] advantages)
