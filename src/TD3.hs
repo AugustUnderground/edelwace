@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
+-- | Twin Delayed Deep Deterministic Policy Gradient Algorithm
 module TD3 ( algorithm
            , Agent
            , mkAgent
@@ -154,15 +155,16 @@ saveAgent path Agent{..} = head $ zipWith T.saveParams
     pao  = path ++ "/actor.pt"
     pat  = path ++ "/actor.pt"
 
----- | Load an Actor Net
+-- | Load an Actor Net
 --loadActor :: String -> Int -> Int -> IO ActorNet
 
----- | Load an Critic Net
+-- | Load an Critic Net
 --loadCritic :: String -> Int -> Int -> IO CriticNet
 
----- | Load an Agent
+-- | Load an Agent
 --loadCritic :: String -> IO Agent
 
+-- | Add Exploration Noise to Action
 addNoise :: Int -> T.Tensor -> IO T.Tensor
 addNoise t action = do
     ε <- (σ' *) <$> normal' [l]

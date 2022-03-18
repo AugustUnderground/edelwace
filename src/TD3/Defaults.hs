@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 
+-- | Twin Delayed Deep Deterministic Policy Gradient Algorithm Defaults
 module TD3.Defaults where
 
 import Lib
@@ -97,9 +98,10 @@ wInit = 3.0e-3
 -- | Learning Rate
 ηφ :: T.Tensor
 ηφ     = toTensor (1.0e-4 :: Float)
--- | Optimizer Betas
+-- | Betas
 β1   :: Float
 β1    = 0.9
+-- | Betas
 β2   :: Float
 β2    = 0.99
 

@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 
+-- | Proximal Policy Optimization Algorithm Defaults
 module PPO.Defaults where
 
 import Lib
@@ -88,5 +89,6 @@ wInit = 3.0e-3
 -- | Betas
 β1 :: Float
 β1 = 0.9
+-- | Betas
 β2 :: Float
 β2 = 0.999

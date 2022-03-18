@@ -2,6 +2,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
+-- | Replay Buffers and Memory Loaders
 module RPB ( ReplayBuffer (..)
            , makeBuffer
            , bufferLength

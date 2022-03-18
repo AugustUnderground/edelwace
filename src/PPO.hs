@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
+-- | Proximal Policy Optimization Algorithm
 module PPO ( algorithm
            , Agent
            , mkAgent

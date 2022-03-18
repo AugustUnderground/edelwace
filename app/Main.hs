@@ -1,4 +1,4 @@
--- {-# OPTIONS_GHC -Wall #-}
+{-# OPTIONS_GHC -Wall #-}
 
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -10,11 +10,8 @@ import qualified SAC
 import qualified TD3
 import qualified PPO
 
-import System.Environment
-import System.Exit
 import Control.Monad
 import Options.Applicative
-import Data.Semigroup       ((<>))
 
 -- | Run Training
 run :: Args -> IO ()

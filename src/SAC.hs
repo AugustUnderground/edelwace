@@ -7,6 +7,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
+-- | Soft Actor Critic Algorithm Defaults
 module SAC ( algorithm
            , Agent
            , mkAgent

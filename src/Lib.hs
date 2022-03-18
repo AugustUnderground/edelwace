@@ -9,6 +9,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Utility and Helper functions for EDELWACE
 module Lib where
 
 import Data.Char (isLower)
