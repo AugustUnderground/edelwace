@@ -68,6 +68,14 @@ nanToNum'' self = T.nan_to_num self nan posinf neginf
 fullLike' :: T.Tensor -> Float -> T.Tensor
 fullLike' self num = T.onesLike self * toTensor num
 
+-- | Select index with [Int] from GPU tensor
+indexSelect'' :: Int -> [Int] -> T.Tensor -> T.Tensor
+indexSelect'' dim idx ten = ten'
+  where
+    opts = T.withDType T.Int32 . T.withDevice (T.device ten) $ T.defaultOpts
+    idx' = T.asTensor' idx opts
+    ten' = T.indexSelect dim idx' ten
+
 ------------------------------------------------------------------------------
 -- Neural Networks
 ------------------------------------------------------------------------------
@@ -133,6 +141,12 @@ toTensor :: T.TensorLike a => a -> T.Tensor
 toTensor t = T.asTensor' t opts
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
+
+-- | Convert an Array to a Tensor
+toIntTensor :: T.TensorLike a => a -> T.Tensor
+toIntTensor t = T.asTensor' t opts
+  where
+    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
 
 -- | Create an empty Float Tensor on GPU
 emptyTensor :: T.Tensor
