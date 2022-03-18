@@ -9,7 +9,7 @@
 
 module SAC ( algorithm
            , Agent
-           , makeAgent
+           , mkAgent
            , saveAgent
            , π
            , q
@@ -118,8 +118,8 @@ data Agent = Agent { φ       :: ActorNet
                    } deriving (Generic, Show)
 
 -- | Agent constructor
-makeAgent :: Int -> Int -> IO Agent
-makeAgent obsDim actDim = do
+mkAgent :: Int -> Int -> IO Agent
+mkAgent obsDim actDim = do
     φOnline   <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
     θ1Online  <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
     θ2Online  <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
@@ -201,8 +201,8 @@ evaluate Agent{..} !s εN = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Int -> Agent -> ReplayBuffer -> T.Tensor -> T.Tensor 
-           -> IO (Agent, T.Tensor)
+updateStep :: Int -> Int -> Int -> Agent -> ReplayBuffer T.Tensor -> T.Tensor 
+           -> T.Tensor -> IO (Agent, T.Tensor)
 updateStep _ _ 0 agent _ _ prios = pure (agent, prios)
 updateStep episode iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights _ = do
     (a_t1, logπ_t1) <- evaluate agent s_t1 εNoise
@@ -277,28 +277,30 @@ updateStep episode iteration epoch agent@Agent{..} memories@ReplayBuffer{..} wei
     updateStep episode iteration epoch' agent' memories weights prios'
   where
     epoch' = epoch - 1
-    s_t0   = states
-    a_t0   = actions
-    s_t1   = states'
-    d'     = toFloatGPU 1.0 - dones
+    s_t0   = rpbStates
+    a_t0   = rpbActions
+    s_t1   = rpbStates'
+    d'     = toFloatGPU 1.0 - rpbDones
     w      = T.reshape [-1,1] weights
-    r      = rewards * toTensor rewardScale
+    r      = rpbRewards * toTensor rewardScale
     h      = toTensor h'
     --r    = scaleRewards rewards ρ
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Int -> Agent -> PERBuffer -> Int -> IO (PERBuffer, Agent)
+updatePolicy :: Int -> Int -> Agent -> PERBuffer T.Tensor -> Int 
+             -> IO (PERBuffer T.Tensor, Agent)
 updatePolicy episode iteration !agent !buffer epochs = do
     (memories, indices, weights) <- perSample buffer iteration batchSize
-    let prios = priorities buffer
+    let prios = perPriorities buffer
     (agent', prios') <- updateStep episode iteration epochs agent 
                                    memories weights prios
     let buffer' = perUpdate buffer indices prios'
     pure (buffer', agent')
 
 -- | Take steps in the Environment, evaluating the current policy
-evaluatePolicy :: Int -> Int -> Int -> Agent -> HymURL -> PERBuffer -> T.Tensor 
-               -> T.Tensor -> IO (PERBuffer, T.Tensor, T.Tensor)
+evaluatePolicy :: Int -> Int -> Int -> Agent -> HymURL -> PERBuffer T.Tensor
+               -> T.Tensor -> T.Tensor 
+               -> IO (PERBuffer T.Tensor, T.Tensor, T.Tensor)
 evaluatePolicy _ _ 0 _ _ buffer obs total = pure (buffer, obs, total)
 evaluatePolicy episode iteration step agent envUrl buffer obs total = do
 
@@ -329,8 +331,8 @@ evaluatePolicy episode iteration step agent envUrl buffer obs total = do
     step' = step - 1
 
 -- | Run Soft Actor Critic Training
-runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> PERBuffer -> T.Tensor 
-             -> T.Tensor -> IO Agent
+runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> PERBuffer T.Tensor
+             -> T.Tensor -> T.Tensor -> IO Agent
 runAlgorithm episode iteration agent _ True _ _ reward = do
     putStrLn $ "Episode " ++ show episode ++ " done after " ++ show iteration 
             ++ " iterations, with a total reward of " ++ show reward'
@@ -348,7 +350,7 @@ runAlgorithm episode iteration agent envUrl _ buffer obs total = do
 
     let !reward'  = T.cat (T.Dim 1) [total, reward]
         !buffer'' = perPush' buffer memories'
-        !bufLen   = bufferLength . memories $ buffer''
+        !bufLen   = bufferLength . perMemories $ buffer''
 
     (!buffer', !agent') <- if bufLen < batchSize 
                               then pure (buffer'', agent)
@@ -366,7 +368,7 @@ train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
     remoteLogPath envUrl >>= setupLogging 
 
-    !agent <- makeAgent obsDim actDim >>= foldLoop' numEpisodes
+    !agent <- mkAgent obsDim actDim >>= foldLoop' numEpisodes
         (\agent' episode -> do
             obs' <- toFloatGPU <$> resetPool envUrl
             keys <- infoPool envUrl

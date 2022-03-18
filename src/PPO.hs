@@ -9,8 +9,8 @@
 
 module PPO ( algorithm
            , Agent
-           , makeAgent
-           --, saveAgent
+           , mkAgent
+           , saveAgent
            , π
            , q
            , train
@@ -18,7 +18,7 @@ module PPO ( algorithm
            ) where
 
 import Lib
-import RPM
+import RPB
 import PPO.Defaults
 
 import Control.Monad
@@ -97,8 +97,8 @@ data Agent = Agent { φ      :: ActorNet
                    } deriving (Generic, Show)
 
 -- | Agent constructor
-makeAgent :: Int -> Int -> IO Agent
-makeAgent obsDim actDim = do
+mkAgent :: Int -> Int -> IO Agent
+mkAgent obsDim actDim = do
     φ' <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
     θ' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim)
 
@@ -134,7 +134,7 @@ saveAgent Agent{..} path = head $ zipWith T.saveParams [a, c] [pa, pc]
 act :: Agent -> T.Tensor -> (Normal, T.Tensor)
 act Agent{..} s = (dist, value)
   where
-    value = T.squeezeAll $ q θ s
+    value = q θ s
     μ  = π φ s
     σ' = T.exp . T.toDependent $ logStd
     σ  = T.expand σ' True (T.shape μ)
@@ -143,7 +143,7 @@ act Agent{..} s = (dist, value)
 -- | Get value and distribution without grad
 act' :: Agent -> T.Tensor -> IO (Normal, T.Tensor)
 act' Agent{..} s = do
-    value <- T.detach . T.squeezeAll $ q θ s
+    value <- T.detach $ q θ s
     μ  <- T.detach $ π φ s
     σ' <- T.detach $ T.exp . T.toDependent $ logStd
     let σ = T.expand σ' True (T.shape μ)
@@ -155,40 +155,39 @@ act' Agent{..} s = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Int -> Agent -> MemoryLoader T.Tensor -> IO Agent
-updateStep episode iteration epoch agent@Agent{..} MemoryLoader{..} = do
-    (φ', _)           <- T.runStep φ optim loss η
-    (θ', _)           <- T.runStep θ optim loss η
-    (logStd', optim') <- T.runStep logStd optim loss η
+updateStep :: Agent -> MemoryLoader T.Tensor -> IO (Agent, T.Tensor)
+updateStep agent@Agent{..} MemoryLoader{..} = do
 
-    when (verbose && epoch `elem` [0,10 .. numIterations]) do
-        putStrLn $ "Iteration" ++ show iteration ++ "Epoch " ++ show epoch 
-                               ++ "Loss:\t" ++ show loss
+    ((φ', θ', logStd'), optim') <- T.runStep (φ, θ, logStd) optim loss η
 
-    writeLoss episode iteration "L" (T.asValue loss :: Float)
-
-    pure $ Agent φ' θ' logStd' optim'
+    pure (Agent φ' θ' logStd' optim', loss)
   where
-    (dist,value) = act agent state
+    (dist,value) = act agent loaderStates
     entrpy       = T.mean $ entropy dist
-    logprobs'    = logProb dist action
-    advantages'  = T.reshape [-1,1] advantage
-    ratios       = T.exp $ logprobs' - logprob
-    surr1        = ratios * advantages'
-    surr2        = advantages' * T.clamp (1.0 - ε) (1.0 + ε) ratios
-    πLoss        = fst . T.minDim (T.Dim 1) T.KeepDim 
+    logprobs'    = logProb dist loaderActions
+    ratios       = T.exp $ logprobs' - loaderLogPorbs
+    surr1        = ratios * loaderAdvantages
+    surr2        = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
+    πLoss        = T.mean $ fst . T.minDim (T.Dim 1) T.KeepDim 
                  $ T.cat (T.Dim 1) [surr1, surr2]
-    qLoss        = T.mean $ T.pow (2.0 :: Float) (returns - value)
+    qLoss        = T.mean $ T.pow (2.0 :: Float) (loaderReturns - value)
     loss         = 0.5 * (- πLoss) + qLoss - δ * entrpy
  
 -- | Run Policy Update
 updatePolicy :: Int -> Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> IO Agent
-updatePolicy episode iteration epoch agent loader | loaderLength loader <= 0 = pure agent
+updatePolicy episode iteration epoch agent loader | loaderLength loader <= 0 
+                                                              = pure agent
                                                   | otherwise = do
-    agent' <- updateStep episode iteration epoch' agent batch
-    updatePolicy episode iteration epoch' agent' loader'
+    (agent', loss) <- updateStep agent batch
+
+    when (verbose && loaderLength loader == 1) do
+        putStrLn $ "Iteration " ++ show iteration ++ " Epoch " ++ show epoch 
+                               ++ " Loss:\t" ++ show loss
+    
+    writeLoss episode iteration "L" (T.asValue loss :: Float)
+
+    updatePolicy episode iteration epoch agent' loader'
   where
-    epoch'  = epoch - 1
     batch   = head <$> loader
     loader' = tail <$> loader
 
@@ -196,20 +195,23 @@ updatePolicy episode iteration epoch agent loader | loaderLength loader <= 0 = p
 evaluateStep :: Int -> Int -> Int -> Agent -> HymURL -> T.Tensor -> ReplayMemory T.Tensor
              -> T.Tensor -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
 evaluateStep _ iteration 0 _ _ obs mem total = do
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
-        putStrLn $ "Iteration" ++ show iteration ++ "Total Reward:\t" ++ show tot
+    when verbose do
+        putStrLn $ "Iteration " ++ show iteration ++ "\tAverage Reward:\t" 
+                ++ show men ++ "\n\t\tTotal Reward:\t" ++ show tot
     pure (mem, obs, total)
   where
+    men = T.mean total
     tot = T.sumAll total
-evaluateStep episode iteration step agent envUrl obs mem@ReplayMemory{..} total = do
+evaluateStep episode iteration step agent envUrl obs mem total = do
     (dist,values') <- act' agent obs
+
     actions' <- T.clamp (- 1.0) 1.0 <$> sample dist 
     let logprobs' = logProb dist actions'
     (!obs'', !rewards', !dones, !infos) <- stepPool envUrl actions'
 
     let keys    = head infos
-        total'  = T.cat (T.Dim 0) [total, rewards]
- 
+        total'  = T.cat (T.Dim 0) [total, T.reshape [1] . T.mean $ rewards']
+
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         putStrLn $ "Environments " ++ " done after " ++ show iteration 
@@ -219,7 +221,7 @@ evaluateStep episode iteration step agent envUrl obs mem@ReplayMemory{..} total 
                 then flip processGace keys <$> resetPool' envUrl dones
                 else pure $ processGace obs'' keys
 
-    let masks' = 1 - dones
+    let masks' = T.logicalNot dones
         mem'   = memoryPush mem obs' actions' logprobs' rewards' values' masks'
 
     evaluateStep episode iteration step' agent envUrl obs' mem' total'
@@ -233,7 +235,7 @@ evaluatePolicy episode iteration agent envUrl obs = do
     evaluateStep episode iteration numSteps agent envUrl obs mem tot
   where
     mem = makeMemory
-    tot = emptyTensor
+    tot = toTensor ([] :: [Float])
 
 -- | Run Proximal Porlicy Optimization Training
 runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> T.Tensor -> T.Tensor 
@@ -243,7 +245,7 @@ runAlgorithm episode iteration agent _ True _ reward = do
             ++ " iterations, with a total reward of " ++ show reward'
     pure agent
   where
-    reward' = T.asValue . T.sumAll $ reward :: Float
+    reward' = T.asValue reward :: Float
 runAlgorithm episode iteration agent envUrl _ obs total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
@@ -251,8 +253,8 @@ runAlgorithm episode iteration agent envUrl _ obs total = do
     
     (!mem', !obs', !tot') <- evaluatePolicy episode iteration agent envUrl obs
 
-    let total' = T.cat (T.Dim 1) [total, tot']
-        loader = dataLoader mem' batchSize γ τ
+    let total' = total + T.sumAll tot'
+        !loader = dataLoader mem' batchSize γ τ
 
     agent' <- T.foldLoop agent numEpochs 
                     (\a epoch -> updatePolicy episode iteration epoch a loader)
@@ -267,13 +269,13 @@ train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
     remoteLogPath envUrl >>= setupLogging 
 
-    !agent <- makeAgent obsDim actDim >>= foldLoop' numEpisodes
+    !agent <- mkAgent obsDim actDim >>= foldLoop' numEpisodes
         (\agent' episode -> do
             obs' <- toFloatGPU <$> resetPool envUrl
             keys <- infoPool envUrl
 
             let !obs    = processGace obs' keys
-                !reward = emptyTensor
+                !reward = toTensor ([] :: [Float])
 
             runAlgorithm episode 0 agent' envUrl False obs reward)
     saveAgent agent ptPath

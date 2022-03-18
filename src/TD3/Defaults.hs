@@ -109,7 +109,7 @@ wInit = 3.0e-3
 
 -- | Replay Buffer Size
 bufferSize :: Int
-bufferSize    = round (1.0e7 :: Float)
+bufferSize    = round (1.0e6 :: Float)
 -- | Initial sample collecting period
 warmupPeriode :: Int
 warmupPeriode = 50
