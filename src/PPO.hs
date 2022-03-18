@@ -112,8 +112,8 @@ mkAgent obsDim actDim = do
     pure $ Agent φ' θ' logStd' optim'
 
 -- | Save an Agent to Disk
-saveAgent :: Agent -> String -> IO ()
-saveAgent Agent{..} path = head $ zipWith T.saveParams [a, c] [pa, pc]
+saveAgent :: String -> Agent -> IO ()
+saveAgent path Agent{..} = head $ zipWith T.saveParams [a, c] [pa, pc]
   where
     a  = T.toDependent <$> T.flattenParameters φ
     c  = T.toDependent <$> T.flattenParameters θ
@@ -278,7 +278,7 @@ train obsDim actDim envUrl = do
                 !reward = toTensor ([] :: [Float])
 
             runAlgorithm episode 0 agent' envUrl False obs reward)
-    saveAgent agent ptPath
+    saveAgent ptPath agent 
     pure agent
   where 
       ptPath = "./models/" ++ algorithm

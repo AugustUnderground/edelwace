@@ -50,6 +50,7 @@ library
     , libtorch-ffi
     , mtl
     , numeric-limits
+    , optparse-applicative
     , wreq
   default-language: Haskell2010
 
@@ -70,6 +71,7 @@ executable edelwace-exe
     , libtorch-ffi
     , mtl
     , numeric-limits
+    , optparse-applicative
     , wreq
   default-language: Haskell2010
 
@@ -93,5 +95,6 @@ test-suite edelwace-test
     , libtorch-ffi
     , mtl
     , numeric-limits
+    , optparse-applicative
     , wreq
   default-language: Haskell2010

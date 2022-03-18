@@ -136,8 +136,8 @@ mkAgent obsDim actDim = do
                  φOpt            θ1Opt    θ2Opt                      
 
 -- | Save an Agent to Disk
-saveAgent :: Agent -> String -> IO ()
-saveAgent Agent{..} path = head $ zipWith T.saveParams 
+saveAgent :: String -> Agent -> IO ()
+saveAgent path Agent{..} = head $ zipWith T.saveParams 
                                 [q1o, q2o, q1t, q2t, ao, at] 
                                 [pq1o, pq2o, pq1t, pq2t, pao, pat]
   where
@@ -329,7 +329,7 @@ train obsDim actDim envUrl = do
                 !rewards = emptyTensor
 
             runAlgorithm episode 0 agent' envUrl False buffer states rewards)
-    saveAgent agent ptPath
+    saveAgent ptPath agent 
     pure agent
   where 
       ptPath = "./models/" ++ algorithm

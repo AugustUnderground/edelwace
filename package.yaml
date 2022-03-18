@@ -31,8 +31,8 @@ dependencies:
 - containers
 - directory
 - numeric-limits
+- optparse-applicative
   #- hvega
-  #- criterion
 
 library:
   source-dirs: src
