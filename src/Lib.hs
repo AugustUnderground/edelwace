@@ -359,6 +359,14 @@ actKeysPool url = fromJust . M.lookup 0 <$> acePoolActKeys url
 obsKeysPool :: HymURL -> IO [String]
 obsKeysPool url = fromJust . M.lookup 0 <$> acePoolObsKeys url 
 
+-- | Number of Environments in Pool
+numEnvsPool :: HymURL -> IO Int
+numEnvsPool url = getNum . fromJust . decodeStrict <$> hymGet url route
+  where
+    route = "num_envs"
+    getNum :: M.Map String Int -> Int
+    getNum = fromJust . M.lookup "num"
+
 -- | Get Info without stepping
 infoPool :: HymURL -> IO Info
 infoPool url = do

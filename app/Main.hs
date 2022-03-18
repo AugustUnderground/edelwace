@@ -20,6 +20,7 @@ run Args{..} | algorithm `notElem` [SAC.algorithm, TD3.algorithm, PPO.algorithm]
              | otherwise = do
     putStrLn $ "``'-.,_,.-'``'-.,_,.='``'-., Trainig " 
               ++ algorithm ++ " ,.-'``'-.,_,.='``'-.,_,.='``"
+
     when (algorithm == SAC.algorithm) do
         SAC.train obs act url >>= SAC.saveAgent path
  

@@ -255,6 +255,7 @@ evaluatePolicy :: Int -> Int -> Int -> Agent -> HymURL -> T.Tensor
 evaluatePolicy _ _ 0 _ _ states buffer total = pure (buffer, states, total)
 evaluatePolicy episode iteration step agent@Agent{..} envUrl states buffer total = do
 
+    p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
                   then randomActionPool envUrl
                   else addNoise iteration (π φ states) >>= T.detach
@@ -276,13 +277,12 @@ evaluatePolicy episode iteration step agent@Agent{..} envUrl states buffer total
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
     when (verbose && T.any dones) do
-        let de = T.squeezeAll . T.nonzero $ dones
+        let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         putStrLn $ "Environments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t" ++ show de
 
     evaluatePolicy episode iteration step' agent envUrl states' buffer' total'
   where
-    p       = iteration * numEnvs
     step'   = step - 1
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training

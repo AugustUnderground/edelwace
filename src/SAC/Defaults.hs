@@ -55,9 +55,6 @@ aceBackend = "xh035"
 -- | ACE Environment variant
 aceVariant :: Int
 aceVariant = 0
--- | Number of Environments
-numEnvs :: Int
-numEnvs    = 20
 
 ------------------------------------------------------------------------------
 --  SAC Algorithm Hyper Parameters
