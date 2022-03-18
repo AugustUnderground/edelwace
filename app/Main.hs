@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wall #-}
+-- {-# OPTIONS_GHC -Wall #-}
 
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -7,16 +7,22 @@ module Main where
 
 import Lib
 import qualified SAC
--- import qualified TD3
--- import qualified PPO
+import qualified TD3
+import qualified PPO
 
 -- import Torch as T
 
 main :: IO ()
 main = do
-    putStrLn $ "Training " ++ SAC.algorithm ++ " ACiD Agent"
-    acid <- SAC.train obs act url
-    SAC.saveAgent acid ptPath
+    --putStrLn $ "Training " ++ SAC.algorithm ++ " ACiD Agent"
+    --acid <- SAC.train obs act url
+    --SAC.saveAgent acid ptPath
+    --putStrLn $ "Training " ++ TD3.algorithm ++ " ACiD Agent"
+    --acid <- TD3.train obs act url
+    --TD3.saveAgent acid ptPath
+    putStrLn $ "Training " ++ PPO.algorithm ++ " ACiD Agent"
+    acid <- PPO.train obs act url
+    PPO.saveAgent acid ptPath
     putStrLn "``'-.,_,.-'``'-.,_,.='``'-., DONE ,.-'``'-.,_,.='``'-.,_,.='``"
   where 
     host       = "localhost"
