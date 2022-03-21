@@ -193,69 +193,58 @@ updatePolicy iteration epoch agent loader | loaderLength loader <= 0 = pure agen
 
 -- | Evaluation Step
 evaluateStep :: Int -> Int -> Agent -> HymURL -> T.Tensor 
-             -> ReplayMemory T.Tensor -> T.Tensor 
-             -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
-evaluateStep iteration 0 _ _ obs mem total = do
+             -> ReplayMemory T.Tensor -> IO (ReplayMemory T.Tensor, T.Tensor)
+evaluateStep iteration 0 _ _ states mem = do
     when verbose do
         putStrLn $ "Iteration " ++ show iteration ++ "\tAverage Reward:\t" 
                 ++ show men ++ "\n\t\tTotal Reward:\t" ++ show tot
-    pure (mem, obs, total)
+    pure (mem, states)
   where
-    men = T.mean total
-    tot = T.sumAll total
-evaluateStep iteration step agent envUrl obs mem total = do
-    (dist,values') <- act' agent obs
+    men = T.mean . memRewards $ mem
+    tot = T.sumAll . memRewards $ mem
+evaluateStep iteration step agent envUrl states mem = do
+    (dist,values') <- act' agent states
 
     actions' <- T.clamp (- 1.0) 1.0 <$> sample dist 
     let logprobs' = logProb dist actions'
-    (!obs'', !rewards', !dones, !infos) <- stepPool envUrl actions'
-
-    let keys    = head infos
-        total'  = T.cat (T.Dim 0) [total, T.reshape [1] . T.mean $ rewards']
+    (!states'', !rewards', !dones, !infos) <- stepPool envUrl actions'
 
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         putStrLn $ "Environments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t" ++ show de
    
-    !obs' <- if T.any dones 
+    let keys    = head infos
+    !states' <- if T.any dones 
                 then flip processGace keys <$> resetPool' envUrl dones
-                else pure $ processGace obs'' keys
+                else pure $ processGace states'' keys
 
     let masks' = T.logicalNot dones
-        mem'   = memoryPush mem obs' actions' logprobs' rewards' values' masks'
+        mem'   = memoryPush mem states' actions' logprobs' rewards' values' masks'
 
-    evaluateStep iteration step' agent envUrl obs' mem' total'
+    evaluateStep iteration step' agent envUrl states' mem'
   where
     step' = step - 1
 
 -- | Evaluate Current Policy
 evaluatePolicy :: Int -> Agent -> HymURL -> T.Tensor 
-               -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
-evaluatePolicy iteration agent envUrl obs = do
-    evaluateStep iteration numSteps agent envUrl obs mem tot
+               -> IO (ReplayMemory T.Tensor, T.Tensor)
+evaluatePolicy iteration agent envUrl states = do
+    evaluateStep iteration numSteps agent envUrl states mem
   where
     mem = makeMemory
-    tot = toTensor ([] :: [Float])
 
 -- | Run Proximal Porlicy Optimization Training
-runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> T.Tensor 
-             -> IO Agent
-runAlgorithm iteration agent _ True _ reward = do
-    putStrLn $ "Finished " ++ show iteration ++ " iterations with total reward: "
-            ++ show reward'
-    pure agent
-  where
-    reward' = T.asValue reward :: Float
-runAlgorithm iteration agent envUrl _ obs total = do
+runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> IO Agent
+runAlgorithm _ agent _ True _ = pure agent
+runAlgorithm iteration agent envUrl _ states = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
-    (!mem', !obs', !tot') <- evaluatePolicy iteration agent envUrl obs
+    (!mem', !states') <- evaluatePolicy iteration agent envUrl states
 
-    let total' = total + T.sumAll tot'
-        !loader = dataLoader mem' batchSize γ τ
+    let !loader = dataLoader mem' batchSize γ τ
 
     agent' <- T.foldLoop agent numEpochs 
                     (\a epoch -> updatePolicy iteration epoch a loader)
@@ -263,7 +252,7 @@ runAlgorithm iteration agent envUrl _ obs total = do
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
 
-    runAlgorithm iteration' agent' envUrl done' obs' total'
+    runAlgorithm iteration' agent' envUrl done' states'
   where
     done'      = iteration >= numIterations
     iteration' = iteration + 1
@@ -274,14 +263,13 @@ train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
     remoteLogPath envUrl >>= setupLogging 
 
-    obs' <- toFloatGPU <$> resetPool envUrl
-    keys <- infoPool envUrl
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
 
-    let !obs    = processGace obs' keys
-        !reward = toTensor ([] :: [Float])
+    let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= 
-        (\agent' -> runAlgorithm 0 agent' envUrl False obs reward)
+        (\agent' -> runAlgorithm 0 agent' envUrl False states )
 
     saveAgent ptPath agent 
     pure agent

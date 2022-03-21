@@ -310,55 +310,47 @@ updatePolicy iteration !agent !buffer epochs = do
 
 -- | Take steps in the Environment, evaluating the current policy
 evaluatePolicy :: Int -> Int -> Agent -> HymURL -> PERBuffer T.Tensor
-               -> T.Tensor -> T.Tensor 
-               -> IO (PERBuffer T.Tensor, T.Tensor, T.Tensor)
-evaluatePolicy _ 0 _ _ buffer obs total = pure (buffer, obs, total)
-evaluatePolicy iteration step agent envUrl buffer obs total = do
+               -> T.Tensor -> IO (PERBuffer T.Tensor, T.Tensor)
+evaluatePolicy _ 0 _ _ buffer states = pure (buffer, states)
+evaluatePolicy iteration step agent envUrl buffer states = do
 
-    actions <- act agent obs
-    (!obs'', !rewards, !dones, !infos) <- stepPool envUrl actions
+    actions <- act agent states
+    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    let keys    = head infos
-        total'  = T.cat (T.Dim 0) [total, rewards]
+    writeReward iteration rewards
  
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         putStrLn $ "Environments finished episode after " ++ show iteration 
                 ++ " iterations, resetting:\n\t" ++ show de
    
-    !obs' <- if T.any dones 
-                then flip processGace keys <$> resetPool' envUrl dones
-                else pure $ processGace obs'' keys
+    let keys = head infos
+    !states' <- if T.any dones 
+                   then flip processGace keys <$> resetPool' envUrl dones
+                   else pure $ processGace states'' keys
 
-    let buffer' = perPush buffer obs actions rewards obs' dones
+    let buffer' = perPush buffer states actions rewards states' dones
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
-    evaluatePolicy iteration step' agent envUrl buffer' obs' total'
+    evaluatePolicy iteration step' agent envUrl buffer' states'
   where
     step' = step - 1
 
 -- | Run Soft Actor Critic Training
 runAlgorithm :: Int -> Agent -> HymURL -> Bool -> PERBuffer T.Tensor
-             -> T.Tensor -> T.Tensor -> IO Agent
-runAlgorithm iteration agent _ True _ _ reward = do
-    putStrLn $ "Finished " ++ show iteration ++ " iterations with total reward: "
-            ++ show reward'
-    pure agent
-  where
-    reward' = T.asValue . T.sumAll $ reward :: Float
-
-runAlgorithm iteration agent envUrl _ buffer obs total = do
+             -> T.Tensor -> IO Agent
+runAlgorithm _ agent _ True _ _ = pure agent
+runAlgorithm iteration agent envUrl _ buffer states = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
-    (!memories', !obs', !reward) <- evaluatePolicy iteration numSteps agent 
-                                                   envUrl buffer obs total'
+    (!memories', !states') <- evaluatePolicy iteration numSteps agent 
+                                             envUrl buffer states
 
-    let !reward'  = T.cat (T.Dim 1) [total, reward]
-        !buffer'' = perPush' buffer memories'
+    let !buffer'' = perPush' buffer memories'
         !bufLen   = bufferLength . perMemories $ buffer''
 
     (!buffer', !agent') <- if bufLen < batchSize 
@@ -368,9 +360,8 @@ runAlgorithm iteration agent envUrl _ buffer obs total = do
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
 
-    runAlgorithm iteration' agent' envUrl done' buffer' obs' reward'
+    runAlgorithm iteration' agent' envUrl done' buffer' states'
   where
-    total'     = emptyTensor
     done'      = iteration >= numIterations
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
@@ -385,10 +376,9 @@ train obsDim actDim envUrl = do
 
     let !states    = processGace states' keys
         !buffer = makePERBuffer bufferSize αStart βStart βFrames
-        !reward = emptyTensor
 
     !agent <- mkAgent obsDim actDim >>= (\agent' -> 
-        runAlgorithm 0 agent' envUrl False buffer states reward)
+        runAlgorithm 0 agent' envUrl False buffer states)
 
     saveAgent ptPath agent 
     pure agent

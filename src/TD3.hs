@@ -249,10 +249,9 @@ updatePolicy iteration !agent !buffer epochs = do
 
 -- | Evaluate Policy
 evaluatePolicy :: Int -> Int -> Agent -> HymURL -> T.Tensor 
-               -> ReplayBuffer T.Tensor -> T.Tensor 
-               -> IO (ReplayBuffer T.Tensor, T.Tensor, T.Tensor)
-evaluatePolicy _ 0 _ _ states buffer total = pure (buffer, states, total)
-evaluatePolicy iteration step agent@Agent{..} envUrl states buffer total = do
+               -> ReplayBuffer T.Tensor -> IO (ReplayBuffer T.Tensor, T.Tensor)
+evaluatePolicy _ 0 _ _ states buffer = pure (buffer, states)
+evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
 
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
@@ -262,8 +261,6 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer total = do
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
     let keys   = head infos
-        total' = T.cat (T.Dim 0) [total, rewards]
-    
     !states' <- if T.any dones 
                 then flip processGace keys <$> resetPool' envUrl dones
                 else pure $ processGace states'' keys
@@ -278,31 +275,23 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer total = do
         putStrLn $ "Environments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t" ++ show de
 
-    evaluatePolicy iteration step' agent envUrl states' buffer' total'
+    evaluatePolicy iteration step' agent envUrl states' buffer'
   where
     step'   = step - 1
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training
 runAlgorithm :: Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
-             -> T.Tensor -> T.Tensor -> IO Agent
-runAlgorithm iteration agent _ True _ _ rewards = do
-    putStrLn $ "Finished " ++ show iteration ++ " iterations with total reward: "
-            ++ show reward'
-    pure agent
-  where
-    --reward' = T.asValue . T.sumAll $ rewards :: Float
-    reward' = T.asValue rewards :: Float
-
-runAlgorithm iteration agent envUrl _ buffer states total = do
+             -> T.Tensor -> IO Agent
+runAlgorithm _ agent _ True _ _ = pure agent
+runAlgorithm iteration agent envUrl _ buffer states = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
-    (!memories', !states', !rewards) <- evaluatePolicy iteration numSteps agent 
-                                                       envUrl states buffer total
+    (!memories', !states') <- evaluatePolicy iteration numSteps agent envUrl 
+                                             states buffer
 
-    let !reward' = total + T.sumAll rewards
-        !buffer' = bufferPush' bufferSize buffer memories'
+    let !buffer' = bufferPush' bufferSize buffer memories'
 
     !agent' <- if bufferLength buffer' < batchSize 
                   then pure agent
@@ -311,7 +300,7 @@ runAlgorithm iteration agent envUrl _ buffer states total = do
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
 
-    runAlgorithm iteration' agent' envUrl done' buffer' states' reward'
+    runAlgorithm iteration' agent' envUrl done' buffer' states'
   where
     iteration' = iteration + 1
     done'      = iteration' >= numIterations
@@ -327,10 +316,9 @@ train obsDim actDim envUrl = do
 
     let !states    = processGace states' keys
         !buffer = makeBuffer
-        !rewards = emptyTensor
 
     !agent <- mkAgent obsDim actDim >>= 
-        (\agent' -> runAlgorithm 0 agent' envUrl False buffer states rewards)
+        (\agent' -> runAlgorithm 0 agent' envUrl False buffer states)
 
     saveAgent ptPath agent 
 
