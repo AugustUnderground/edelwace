@@ -7,8 +7,8 @@ Reinforcement Learning Algorithms for
 
 ## Setup
 
-LibTorch is required, as per HaskTorch Tutorial, and must be symlinked into
-this directory. Then source `setenv` in your shell.
+LibTorch is required, as per HaskTorch Documentation, and must be symlinked
+into this directory. Then source `setenv` in your shell.
 
 For training [Hym](https://github.com/AugustUnderground/hym) must be up
 and running.
@@ -21,6 +21,7 @@ $ stack build
 ## Usage
 
 With default options
+
 ```bash
 $ stack run
 ```
@@ -61,19 +62,25 @@ Available options:
 
 ## Algorithms
 
-Excessive use of Unicode and Strictness.
+[Haddock](https://augustunderground.github.io/edelwace/)
 
-### SAC
+**Caution:** Excessive use of Unicode and Strictness.
 
-...
+### Soft Actor Critic (SAC)
 
-### TD3
+[Arxiv](https://arxiv.org/abs/1801.01290)
 
-...
+### Twin Delayed Deep Deterministic Policy Gradient (TD3)
 
-### PPO
+[Arxiv](https://arxiv.org/abs/1802.09477)
 
-...
+### Proximal Policy Optimization (PPO)
+
+[Arxiv](https://arxiv.org/abs/1707.06347)
+
+### Prioritized Experience Replay (PER)
+
+[Arxiv](https://arxiv.org/abs/1511.05952)
 
 ## Results
 
@@ -83,10 +90,10 @@ Excessive use of Unicode and Strictness.
 
 - [X] Implement SAC
 - [X] Implement TD3
-- [ ] Implement PPO
+- [X] Implement PPO
 - [X] Implement PER
 - [ ] Visualization
 - [ ] Wait for Normal Distribution in HaskTorch
 - [ ] Remove strictness where unecessary
-- [ ] Add agent loading ability
+- [X] Add agent loading ability
 - [X] Command Line Options
