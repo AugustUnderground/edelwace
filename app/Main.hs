@@ -93,7 +93,7 @@ args = Args <$> strOption ( long "algorithm" <> short 'l'
             <*> option auto ( long "obs" <> short 'o'
                                          <> metavar "OBSERVATIONS" 
                                          <> showDefault 
-                                         <> value 42
+                                         <> value 40
                                          <> help "Dimensions of Observation Space" )
             <*> strOption ( long "path" <> short 'f'
                                         <> metavar "FILE" 
