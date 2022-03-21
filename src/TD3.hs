@@ -12,6 +12,7 @@ module TD3 ( algorithm
            , Agent (..)
            , mkAgent
            , saveAgent
+           , loadAgent
            , π
            , q
            , q'
@@ -136,33 +137,40 @@ mkAgent obsDim actDim = do
     pure $ Agent φOnline φTarget θ1Online θ2Online θ1Target θ2Target
                  φOpt            θ1Opt    θ2Opt                      
 
--- | Save an Agent to Disk
+-- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
-saveAgent path Agent{..} = head $ zipWith T.saveParams 
-                                [q1o, q2o, q1t, q2t, ao, at] 
-                                [pq1o, pq2o, pq1t, pq2t, pao, pat]
-  where
-    q1o  = T.toDependent <$> T.flattenParameters θ1
-    q2o  = T.toDependent <$> T.flattenParameters θ2
-    q1t  = T.toDependent <$> T.flattenParameters θ1'
-    q2t  = T.toDependent <$> T.flattenParameters θ2'
-    ao   = T.toDependent <$> T.flattenParameters φ
-    at   = T.toDependent <$> T.flattenParameters φ'
-    pq1o = path ++ "/q1o.pt"
-    pq2o = path ++ "/q2o.pt"
-    pq1t = path ++ "/q1t.pt"
-    pq2t = path ++ "/q2t.pt"
-    pao  = path ++ "/actor.pt"
-    pat  = path ++ "/actor.pt"
+saveAgent path Agent{..} = do
 
--- | Load an Actor Net
---loadActor :: String -> Int -> Int -> IO ActorNet
+        T.saveParams φ   (path ++ "/actorOnline.pt")
+        T.saveParams φ'  (path ++ "/actorTarget.pt")
+        T.saveParams θ1  (path ++ "/q1Online.pt")
+        T.saveParams θ2  (path ++ "/q2Online.pt")
+        T.saveParams θ1' (path ++ "/q1Target.pt")
+        T.saveParams θ2' (path ++ "/q2Target.pt")
 
--- | Load an Critic Net
---loadCritic :: String -> Int -> Int -> IO CriticNet
+        saveOptim φOptim  (path ++ "/actorOptim")
+        saveOptim θ1Optim (path ++ "/q1Optim")
+        saveOptim θ2Optim (path ++ "/q2Optim")
 
--- | Load an Agent
---loadCritic :: String -> IO Agent
+        putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
+
+-- | Load an Agent Checkpoint
+loadAgent :: String -> Int -> Int -> Int -> IO Agent
+loadAgent path obsDim iter actDim = do
+        Agent{..} <- mkAgent obsDim actDim
+
+        fφ    <- T.loadParams φ   (path ++ "/actor.pt")
+        fφ'   <- T.loadParams φ'  (path ++ "/actor.pt")
+        fθ1   <- T.loadParams θ1  (path ++ "/q1Online.pt")
+        fθ2   <- T.loadParams θ2  (path ++ "/q2Online.pt")
+        fθ1'  <- T.loadParams θ1' (path ++ "/q1Target.pt")
+        fθ2'  <- T.loadParams θ2' (path ++ "/q2Target.pt")
+
+        fφOpt  <- loadOptim iter β1 β2 (path ++ "/actorOptim")
+        fθ1Opt <- loadOptim iter β1 β2 (path ++ "/q1Optim")
+        fθ2Opt <- loadOptim iter β1 β2 (path ++ "/q2Optim")
+       
+        pure $ Agent fφ fφ' fθ1 fθ2 fθ1' fθ2' fφOpt fθ1Opt fθ2Opt
 
 -- | Add Exploration Noise to Action
 addNoise :: Int -> T.Tensor -> IO T.Tensor

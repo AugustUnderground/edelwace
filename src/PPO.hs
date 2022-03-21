@@ -12,6 +12,7 @@ module PPO ( algorithm
            , Agent (..)
            , mkAgent
            , saveAgent
+           , loadAgent
            , π
            , q
            , train
@@ -112,24 +113,33 @@ mkAgent obsDim actDim = do
 
     pure $ Agent φ' θ' logStd' optim'
 
--- | Save an Agent to Disk
+-- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
-saveAgent path Agent{..} = head $ zipWith T.saveParams [a, c] [pa, pc]
+saveAgent path Agent{..} = do
+
+        T.saveParams φ         (path ++ "/actor.pt")
+        T.saveParams θ         (path ++ "/critic.pt")
+        T.save       [logStd'] (path ++ "/logStd.pt")
+
+        saveOptim optim        (path ++ "/optim")
+
+        putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
   where
-    a  = T.toDependent <$> T.flattenParameters φ
-    c  = T.toDependent <$> T.flattenParameters θ
-    pa = path ++ "/actor.pt"
-    pc = path ++ "/critic.pt"
+    logStd' = T.toDependent logStd
 
----- | Load an Actor Net
---loadActor :: String -> Int -> Int -> IO ActorNet
---loadActor fp numObs numAct = T.sample (ActorNetSpec numObs numAct) 
---                           >>= flip T.loadParams fp
+-- | Load an Agent Checkpoint
+loadAgent :: String -> Int -> Int -> Int -> IO Agent
+loadAgent path obsDim iter actDim = do
+        Agent{..} <- mkAgent obsDim actDim
 
----- | Load an Critic Net
---loadCritic :: String -> Int -> Int -> IO CriticNet
---loadCritic fp numObs numAct = T.sample (CriticNetSpec numObs numAct) 
---                            >>= flip T.loadParams fp
+        fφ      <- T.loadParams φ   (path ++ "/actor.pt")
+        fθ      <- T.loadParams θ   (path ++ "/critic.pt")
+
+        flogStd <- T.load (path ++ "/logStd.pt") >>= T.makeIndependent . head
+
+        fopt     <- loadOptim iter β1 β2 (path ++ "/optim")
+       
+        pure $ Agent fφ fθ flogStd fopt
 
 -- | Get value and distribution
 act :: Agent -> T.Tensor -> (Normal, T.Tensor)
