@@ -450,26 +450,45 @@ createLogDir = createDirectoryIfMissing True
 setupLogging :: FilePath -> IO ()
 setupLogging remoteDir = do
     localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
+    localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
+
     BS.writeFile localLoss   "Iteration,Model,Loss\n"
+    BS.writeFile localLoss   "Iteration,Env,Reward\n"
 
     createLogDir remoteDir
 
     doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
+    doesFileExist remoteReward >>= flip when (removeFile remoteReward)
 
     createFileLink localLoss   remoteLoss
+    createFileLink localReward remoteReward
   where
     remoteLoss   = remoteDir ++ "/loss.csv"
+    remoteReward = remoteDir ++ "/reward.csv"
 
 -- | Get SHACE Logging path to a given URL
 remoteLogPath :: HymURL -> IO FilePath
 remoteLogPath url = (++ "/model") <$> shaceLogPath url
 
--- | Append a line to the give loss log file (w/o) episode
+-- | Append a line to the given loss log file (w/o) episode
 writeLoss :: Int -> String -> Float -> IO ()
 writeLoss iteration model loss = BS.appendFile path line
   where
     path = "./log/loss.csv"
     line = BS.pack $ show iteration ++ "," ++ model ++ "," ++ show loss ++ "\n"
+
+-- | Append a line to the given reward log file (w/o) episode
+writeReward :: Int -> T.Tensor -> IO ()
+writeReward iteration rewards = forM_ (zip3 (repeat iteration) env reward)
+                                      (\(i,e,r) -> BS.appendFile path 
+                                               <$> BS.pack 
+                                                $  show i ++ "," ++ show e 
+                                                          ++ "," ++ show r 
+                                                          ++ "\n")
+  where
+    path   = "./log/reward.csv"
+    reward = T.asValue (T.squeezeAll rewards) :: [Float]
+    env    = [ 0 .. (length reward - 1) ]
 
 -- | Obtain current performance from a gace server and write/append to log
 writeEnvLog :: FilePath -> HymURL -> IO ()
