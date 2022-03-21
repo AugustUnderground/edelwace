@@ -453,7 +453,7 @@ setupLogging remoteDir = do
     localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
 
     BS.writeFile localLoss   "Iteration,Model,Loss\n"
-    BS.writeFile localLoss   "Iteration,Env,Reward\n"
+    BS.writeFile localReward "Iteration,Env,Reward\n"
 
     createLogDir remoteDir
 
