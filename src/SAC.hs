@@ -321,8 +321,8 @@ evaluatePolicy iteration step agent envUrl buffer states = do
  
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
-        putStrLn $ "Environments finished episode after " ++ show iteration 
-                ++ " iterations, resetting:\n\t" ++ show de
+        putStrLn $ "\tEnvironments finished episode after " ++ show iteration 
+                ++ " iterations, resetting:\n\t\t" ++ show de
    
     let keys = head infos
     !states' <- if T.any dones 

@@ -272,8 +272,8 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
 
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
-        putStrLn $ "Environments " ++ " done after " ++ show iteration 
-                ++ " iterations, resetting:\n\t" ++ show de
+        putStrLn $ "\tEnvironments " ++ " done after " ++ show iteration 
+                ++ " iterations, resetting:\n\t\t" ++ show de
 
     evaluatePolicy iteration step' agent envUrl states' buffer'
   where
