@@ -55,48 +55,57 @@ data Args = Args { algorithm :: String
 
 -- | Command Line Argument Parser
 args :: Parser Args
-args = Args <$> strOption ( long "algorithm" <> short 'l'
-                                             <> metavar "ALGORITHM" 
-                                             <> showDefault 
-                                             <> value "sac"
-                                             <> help "DRL Algorithm, one of sac, td3, ppo" )
-            <*> strOption ( long "host" <> short 'H'
-                                        <> metavar "HOST" 
-                                        <> showDefault 
-                                        <> value "localhost"
-                                        <> help "Hym server host address" )
-            <*> strOption ( long "port" <> short 'P'
-                                        <> metavar "PORT" 
-                                        <> showDefault 
-                                        <> value "7009"
-                                        <> help "Hym server port" )
-            <*> strOption ( long "ace" <> short 'i'
-                                       <> metavar "ID" 
-                                       <> showDefault 
-                                       <> value "op2"
-                                       <> help "ACE OP ID" )
-            <*> strOption ( long "pdk" <> short 'p'
-                                       <> metavar "PDK" 
-                                       <> showDefault 
-                                       <> value "xh035"
-                                       <> help "ACE Backend" )
-            <*> strOption ( long "var" <> short 'v'
-                                       <> metavar "VARIANT" 
-                                       <> showDefault 
-                                       <> value "0"
-                                       <> help "GACE Environment Variant" )
-            <*> option auto ( long "act" <> short 'a'
-                                         <> metavar "ACTIONS" 
-                                         <> showDefault 
-                                         <> value 10
-                                         <> help "Dimensions of Action Space" )
-            <*> option auto ( long "obs" <> short 'o'
-                                         <> metavar "OBSERVATIONS" 
-                                         <> showDefault 
-                                         <> value 40
-                                         <> help "Dimensions of Observation Space" )
-            <*> strOption ( long "path" <> short 'f'
-                                        <> metavar "FILE" 
-                                        <> showDefault 
-                                        <> value "./models"
-                                        <> help "Checkpoint File Path" )
+args = Args <$> strOption ( long "algorithm" 
+                         <> short 'l'
+                         <> metavar "ALGORITHM" 
+                         <> showDefault 
+                         <> value "sac"
+                         <> help "DRL Algorithm, one of sac, td3, ppo" )
+            <*> strOption ( long "host" 
+                         <> short 'H'
+                         <> metavar "HOST" 
+                         <> showDefault 
+                         <> value "localhost"
+                         <> help "Hym server host address" )
+            <*> strOption ( long "port" 
+                         <> short 'P'
+                         <> metavar "PORT" 
+                         <> showDefault 
+                         <> value "7009"
+                         <> help "Hym server port" )
+            <*> strOption ( long "ace" 
+                         <> short 'i'
+                         <> metavar "ID" 
+                         <> showDefault 
+                         <> value "op2"
+                         <> help "ACE OP ID" )
+            <*> strOption ( long "pdk" 
+                         <> short 'p'
+                         <> metavar "PDK" 
+                         <> showDefault 
+                         <> value "xh035"
+                         <> help "ACE Backend" )
+            <*> strOption ( long "var" 
+                         <> short 'v'
+                         <> metavar "VARIANT" 
+                         <> showDefault 
+                         <> value "0"
+                         <> help "GACE Environment Variant" )
+            <*> option auto ( long "act" 
+                           <> short 'a'
+                           <> metavar "ACTIONS" 
+                           <> showDefault 
+                           <> value 10
+                           <> help "Dimensions of Action Space" )
+            <*> option auto ( long "obs" 
+                           <> short 'o'
+                           <> metavar "OBSERVATIONS" 
+                           <> showDefault 
+                           <> value 40
+                           <> help "Dimensions of Observation Space" )
+            <*> strOption ( long "path" 
+                         <> short 'f'
+                         <> metavar "FILE" 
+                         <> showDefault 
+                         <> value "./models"
+                         <> help "Checkpoint File Path" )
