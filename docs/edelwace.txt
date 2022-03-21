@@ -9,6 +9,8 @@
 @package edelwace
 @version 0.1.0.0
 
+
+-- | Utility and Helper functions for EDELWACE
 module Lib
 
 -- | Swaps the arguments of HaskTorch's foldLoop around
@@ -188,6 +190,9 @@ actKeysPool :: HymURL -> IO [String]
 -- | Shorthand for getting keys of pooled same envs
 obsKeysPool :: HymURL -> IO [String]
 
+-- | Number of Environments in Pool
+numEnvsPool :: HymURL -> IO Int
+
 -- | Get Info without stepping
 infoPool :: HymURL -> IO Info
 
@@ -199,6 +204,12 @@ randomStepPool :: HymURL -> IO (Tensor, Tensor, Tensor, [Info])
 
 -- | Get a set of random actions from the current environment
 randomActionPool :: HymURL -> IO Tensor
+
+-- | Optimizer moments at given prefix
+saveOptim :: Adam -> FilePath -> IO ()
+
+-- | Load Optimizer State
+loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
 
 -- | Process / Sanitize the Observations from GACE
 processGace :: Tensor -> Info -> Tensor
@@ -215,14 +226,11 @@ setupLogging :: FilePath -> IO ()
 -- | Get SHACE Logging path to a given URL
 remoteLogPath :: HymURL -> IO FilePath
 
--- | Append a line to the give log file
-writeLoss :: Int -> Int -> String -> Float -> IO ()
+-- | Append a line to the given loss log file (w/o) episode
+writeLoss :: Int -> String -> Float -> IO ()
 
--- | Append a line to the give log file
-writeReward :: Int -> Int -> Int -> Float -> IO ()
-
--- | Convenience function for logging an entire env tensor
-writeReward' :: Int -> Int -> Tensor -> IO ()
+-- | Append a line to the given reward log file (w/o) episode
+writeReward :: Int -> Tensor -> IO ()
 
 -- | Obtain current performance from a gace server and write/append to log
 writeEnvLog :: FilePath -> HymURL -> IO ()
@@ -240,6 +248,8 @@ instance Data.Aeson.Types.ToJSON.ToJSON Lib.Step
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Info
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Info
 
+
+-- | Proximal Policy Optimization Algorithm Defaults
 module PPO.Defaults
 
 -- | Algorithm ID
@@ -281,9 +291,6 @@ aceBackend :: String
 -- | ACE Environment variant
 aceVariant :: Int
 
--- | Number of Environments
-numEnvs :: Int
-
 -- | Factor for clipping
 ε :: Float
 
@@ -304,8 +311,12 @@ wInit :: Float
 
 -- | Betas
 β1 :: Float
+
+-- | Betas
 β2 :: Float
 
+
+-- | Replay Buffers and Memory Loaders
 module RPB
 
 -- | Strict Simple/Naive Replay Buffer
@@ -415,6 +426,8 @@ instance GHC.Base.Functor RPB.ReplayMemory
 instance GHC.Base.Functor RPB.PERBuffer
 instance GHC.Base.Functor RPB.ReplayBuffer
 
+
+-- | Proximal Policy Optimization Algorithm
 module PPO
 
 -- | Algorithm ID
@@ -422,12 +435,17 @@ algorithm :: String
 
 -- | PPO Agent
 data Agent
+Agent :: ActorNet -> CriticNet -> IndependentTensor -> Adam -> Agent
+[φ] :: Agent -> ActorNet
+[θ] :: Agent -> CriticNet
+[logStd] :: Agent -> IndependentTensor
+[optim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 
 -- | Save an Agent to Disk
-saveAgent :: Agent -> String -> IO ()
+saveAgent :: String -> Agent -> IO ()
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> Tensor -> Tensor
@@ -452,6 +470,8 @@ instance GHC.Generics.Generic PPO.Agent
 instance Torch.NN.Randomizable PPO.CriticNetSpec PPO.CriticNet
 instance Torch.NN.Randomizable PPO.ActorNetSpec PPO.ActorNet
 
+
+-- | Soft Actor Critic Algorithm Defaults
 module SAC.Defaults
 
 -- | Algorithm ID
@@ -460,20 +480,14 @@ algorithm :: String
 -- | Print verbose debug output
 verbose :: Bool
 
--- | Number of episodes to play
-numEpisodes :: Int
-
 -- | How many steps to take in env
 numSteps :: Int
 
 -- | How many gradient update steps
 numEpochs :: Int
 
--- | Number of iterations
+-- | Total Number of iterations
 numIterations :: Int
-
--- | Early stop criterion
-earlyStop :: Float
 
 -- | Size of the batches during epoch
 batchSize :: Int
@@ -492,9 +506,6 @@ aceBackend :: String
 
 -- | ACE Environment variant
 aceVariant :: Int
-
--- | Number of Environments
-numEnvs :: Int
 
 -- | Discount Factor
 γ :: Tensor
@@ -538,8 +549,10 @@ wInit :: Float
 -- | Learning Rate for Alpha
 ηα :: Tensor
 
--- | Optimizer Betas
+-- | Betas
 β1 :: Float
+
+-- | Betas
 β2 :: Float
 
 -- | Maximum size of Replay Buffer
@@ -554,6 +567,8 @@ bufferSize :: Int
 -- | Weight Exponent Delay
 βFrames :: Int
 
+
+-- | Soft Actor Critic Algorithm Defaults
 module SAC
 
 -- | Algorithm ID
@@ -561,12 +576,27 @@ algorithm :: String
 
 -- | SAC Agent
 data Agent
+Agent :: ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNet -> Adam -> Adam -> Adam -> Float -> IndependentTensor -> Adam -> Agent
+[φ] :: Agent -> ActorNet
+[θ1] :: Agent -> CriticNet
+[θ2] :: Agent -> CriticNet
+[θ1'] :: Agent -> CriticNet
+[θ2'] :: Agent -> CriticNet
+[φOptim] :: Agent -> Adam
+[θ1Optim] :: Agent -> Adam
+[θ2Optim] :: Agent -> Adam
+[h'] :: Agent -> Float
+[αLog] :: Agent -> IndependentTensor
+[αOptim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 
--- | Save an Agent to Disk
-saveAgent :: Agent -> String -> IO ()
+-- | Save an Agent Checkpoint
+saveAgent :: String -> Agent -> IO ()
+
+-- | Load an Agent Checkpoint
+loadAgent :: String -> Int -> Int -> Int -> IO Agent
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> Tensor -> (Tensor, Tensor)
@@ -600,6 +630,8 @@ instance GHC.Generics.Generic SAC.Agent
 instance Torch.NN.Randomizable SAC.CriticNetSpec SAC.CriticNet
 instance Torch.NN.Randomizable SAC.ActorNetSpec SAC.ActorNet
 
+
+-- | Twin Delayed Deep Deterministic Policy Gradient Algorithm Defaults
 module TD3.Defaults
 
 -- | Algorithm ID
@@ -638,9 +670,6 @@ aceBackend :: String
 -- | ACE Environment variant
 aceVariant :: Int
 
--- | Number of Environments
-numEnvs :: Int
-
 -- | Policy and Target Critic Update Delay
 d :: Int
 
@@ -674,8 +703,10 @@ wInit :: Float
 -- | Learning Rate
 ηφ :: Tensor
 
--- | Optimizer Betas
+-- | Betas
 β1 :: Float
+
+-- | Betas
 β2 :: Float
 
 -- | Replay Buffer Size
@@ -684,6 +715,8 @@ bufferSize :: Int
 -- | Initial sample collecting period
 warmupPeriode :: Int
 
+
+-- | Twin Delayed Deep Deterministic Policy Gradient Algorithm
 module TD3
 
 -- | Algorithm ID
@@ -691,12 +724,22 @@ algorithm :: String
 
 -- | TD3 Agent
 data Agent
+Agent :: ActorNet -> ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNet -> Adam -> Adam -> Adam -> Agent
+[φ] :: Agent -> ActorNet
+[φ'] :: Agent -> ActorNet
+[θ1] :: Agent -> CriticNet
+[θ2] :: Agent -> CriticNet
+[θ1'] :: Agent -> CriticNet
+[θ2'] :: Agent -> CriticNet
+[φOptim] :: Agent -> Adam
+[θ1Optim] :: Agent -> Adam
+[θ2Optim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 
 -- | Save an Agent to Disk
-saveAgent :: Agent -> String -> IO ()
+saveAgent :: String -> Agent -> IO ()
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> Tensor -> Tensor
@@ -706,6 +749,16 @@ q :: CriticNet -> Tensor -> Tensor -> Tensor
 
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
+
+-- | Load an Actor Net loadActor :: String -&gt; Int -&gt; Int -&gt; IO
+--   ActorNet
+--   
+--   Load an Critic Net loadCritic :: String -&gt; Int -&gt; Int -&gt; IO
+--   CriticNet
+--   
+--   Load an Agent loadCritic :: String -&gt; IO Agent
+--   
+--   Add Exploration Noise to Action
 addNoise :: Int -> Tensor -> IO Tensor
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on
