@@ -17,21 +17,15 @@ algorithm     = "sac"
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True
--- | Number of episodes to play
-numEpisodes :: Int
-numEpisodes   = 666
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1
 -- | How many gradient update steps
 numEpochs :: Int
 numEpochs     = 1
--- | Number of iterations
+-- | Total Number of iterations
 numIterations :: Int
-numIterations = 150
--- | Early stop criterion
-earlyStop :: Float
-earlyStop     = -500.0
+numIterations = round (1.0e8 :: Float)
 -- | Size of the batches during epoch
 batchSize :: Int
 batchSize     = 256

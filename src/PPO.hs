@@ -9,7 +9,7 @@
 
 -- | Proximal Policy Optimization Algorithm
 module PPO ( algorithm
-           , Agent
+           , Agent (..)
            , mkAgent
            , saveAgent
            , π
@@ -175,27 +175,27 @@ updateStep agent@Agent{..} MemoryLoader{..} = do
     loss         = 0.5 * (- πLoss) + qLoss - δ * entrpy
  
 -- | Run Policy Update
-updatePolicy :: Int -> Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> IO Agent
-updatePolicy episode iteration epoch agent loader | loaderLength loader <= 0 
-                                                              = pure agent
-                                                  | otherwise = do
+updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> IO Agent
+updatePolicy iteration epoch agent loader | loaderLength loader <= 0 = pure agent
+                                          | otherwise = do
     (agent', loss) <- updateStep agent batch
 
     when (verbose && loaderLength loader == 1) do
         putStrLn $ "Iteration " ++ show iteration ++ " Epoch " ++ show epoch 
                                ++ " Loss:\t" ++ show loss
     
-    writeLoss episode iteration "L" (T.asValue loss :: Float)
+    writeLoss iteration "L" (T.asValue loss :: Float)
 
-    updatePolicy episode iteration epoch agent' loader'
+    updatePolicy iteration epoch agent' loader'
   where
     batch   = head <$> loader
     loader' = tail <$> loader
 
 -- | Evaluation Step
-evaluateStep :: Int -> Int -> Int -> Agent -> HymURL -> T.Tensor -> ReplayMemory T.Tensor
-             -> T.Tensor -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
-evaluateStep _ iteration 0 _ _ obs mem total = do
+evaluateStep :: Int -> Int -> Agent -> HymURL -> T.Tensor 
+             -> ReplayMemory T.Tensor -> T.Tensor 
+             -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
+evaluateStep iteration 0 _ _ obs mem total = do
     when verbose do
         putStrLn $ "Iteration " ++ show iteration ++ "\tAverage Reward:\t" 
                 ++ show men ++ "\n\t\tTotal Reward:\t" ++ show tot
@@ -203,7 +203,7 @@ evaluateStep _ iteration 0 _ _ obs mem total = do
   where
     men = T.mean total
     tot = T.sumAll total
-evaluateStep episode iteration step agent envUrl obs mem total = do
+evaluateStep iteration step agent envUrl obs mem total = do
     (dist,values') <- act' agent obs
 
     actions' <- T.clamp (- 1.0) 1.0 <$> sample dist 
@@ -225,60 +225,64 @@ evaluateStep episode iteration step agent envUrl obs mem total = do
     let masks' = T.logicalNot dones
         mem'   = memoryPush mem obs' actions' logprobs' rewards' values' masks'
 
-    evaluateStep episode iteration step' agent envUrl obs' mem' total'
+    evaluateStep iteration step' agent envUrl obs' mem' total'
   where
     step' = step - 1
 
 -- | Evaluate Current Policy
-evaluatePolicy :: Int -> Int -> Agent -> HymURL -> T.Tensor 
+evaluatePolicy :: Int -> Agent -> HymURL -> T.Tensor 
                -> IO (ReplayMemory T.Tensor, T.Tensor, T.Tensor)
-evaluatePolicy episode iteration agent envUrl obs = do
-    evaluateStep episode iteration numSteps agent envUrl obs mem tot
+evaluatePolicy iteration agent envUrl obs = do
+    evaluateStep iteration numSteps agent envUrl obs mem tot
   where
     mem = makeMemory
     tot = toTensor ([] :: [Float])
 
 -- | Run Proximal Porlicy Optimization Training
-runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> T.Tensor -> T.Tensor 
+runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> T.Tensor 
              -> IO Agent
-runAlgorithm episode iteration agent _ True _ reward = do
-    putStrLn $ "Episode " ++ show episode ++ " done after " ++ show iteration 
-            ++ " iterations, with a total reward of " ++ show reward'
+runAlgorithm iteration agent _ True _ reward = do
+    putStrLn $ "Finished " ++ show iteration ++ " iterations with total reward: "
+            ++ show reward'
     pure agent
   where
     reward' = T.asValue reward :: Float
-runAlgorithm episode iteration agent envUrl _ obs total = do
+runAlgorithm iteration agent envUrl _ obs total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
-        putStrLn $ "Episode " ++ show episode ++ ", Iteration " ++ show iteration
+        putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
-    (!mem', !obs', !tot') <- evaluatePolicy episode iteration agent envUrl obs
+    (!mem', !obs', !tot') <- evaluatePolicy iteration agent envUrl obs
 
     let total' = total + T.sumAll tot'
         !loader = dataLoader mem' batchSize γ τ
 
     agent' <- T.foldLoop agent numEpochs 
-                    (\a epoch -> updatePolicy episode iteration epoch a loader)
+                    (\a epoch -> updatePolicy iteration epoch a loader)
 
-    runAlgorithm episode iteration' agent' envUrl done' obs' total'
+    when (iteration `elem` [0,10 .. numIterations]) do
+        saveAgent ptPath agent 
+
+    runAlgorithm iteration' agent' envUrl done' obs' total'
   where
     done'      = iteration >= numIterations
     iteration' = iteration + 1
+    ptPath     = "./models/" ++ algorithm
 
 -- | Train Proximal Policy Optimization Agent on Environment
 train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
     remoteLogPath envUrl >>= setupLogging 
 
-    !agent <- mkAgent obsDim actDim >>= foldLoop' numEpisodes
-        (\agent' episode -> do
-            obs' <- toFloatGPU <$> resetPool envUrl
-            keys <- infoPool envUrl
+    obs' <- toFloatGPU <$> resetPool envUrl
+    keys <- infoPool envUrl
 
-            let !obs    = processGace obs' keys
-                !reward = toTensor ([] :: [Float])
+    let !obs    = processGace obs' keys
+        !reward = toTensor ([] :: [Float])
 
-            runAlgorithm episode 0 agent' envUrl False obs reward)
+    !agent <- mkAgent obsDim actDim >>= 
+        (\agent' -> runAlgorithm 0 agent' envUrl False obs reward)
+
     saveAgent ptPath agent 
     pure agent
   where 

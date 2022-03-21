@@ -9,7 +9,7 @@
 
 -- | Twin Delayed Deep Deterministic Policy Gradient Algorithm
 module TD3 ( algorithm
-           , Agent
+           , Agent (..)
            , mkAgent
            , saveAgent
            , π
@@ -182,9 +182,9 @@ addNoise t action = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Int -> Agent -> ReplayBuffer T.Tensor -> IO Agent
-updateStep _ _ 0 agent _ = pure agent
-updateStep episode iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
+updateStep :: Int -> Int -> Agent -> ReplayBuffer T.Tensor -> IO Agent
+updateStep _ 0 agent _ = pure agent
+updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     ε <- normal μ' σ'
     let a' = π φ' s' + ε
     y <- T.detach $ r + γ * q' θ1' θ2' s' a'
@@ -197,8 +197,8 @@ updateStep episode iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    writeLoss episode iteration "Q1" (T.asValue jQ1 :: Float)
-    writeLoss episode iteration "Q2" (T.asValue jQ2 :: Float)
+    writeLoss iteration "Q1" (T.asValue jQ1 :: Float)
+    writeLoss iteration "Q2" (T.asValue jQ2 :: Float)
 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
@@ -207,7 +207,7 @@ updateStep episode iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
         updateActor = do
             when (verbose && iteration `elem` [0,10 .. numIterations]) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            writeLoss episode iteration "A" (T.asValue jφ :: Float)
+            writeLoss iteration "A" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
@@ -231,7 +231,7 @@ updateStep episode iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     let agent' = Agent φOnline' φTarget' θ1Online' θ2Online' θ1Target' θ2Target' 
                        φOptim'           θ1Optim'  θ2Optim'
 
-    updateStep episode iteration epoch' agent' buffer
+    updateStep iteration epoch' agent' buffer
   where
     μ'     = T.zerosLike rpbActions
     σ'     = T.onesLike μ' * σ
@@ -242,18 +242,17 @@ updateStep episode iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     s'     = rpbStates'
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Int -> Agent -> ReplayBuffer T.Tensor -> Int -> IO Agent
-updatePolicy episode iteration !agent !buffer epochs = do
-
+updatePolicy :: Int -> Agent -> ReplayBuffer T.Tensor -> Int -> IO Agent
+updatePolicy iteration !agent !buffer epochs = do
     memories <- bufferRandomSample batchSize buffer
-    updateStep episode iteration epochs agent memories
+    updateStep iteration epochs agent memories
 
 -- | Evaluate Policy
-evaluatePolicy :: Int -> Int -> Int -> Agent -> HymURL -> T.Tensor 
+evaluatePolicy :: Int -> Int -> Agent -> HymURL -> T.Tensor 
                -> ReplayBuffer T.Tensor -> T.Tensor 
                -> IO (ReplayBuffer T.Tensor, T.Tensor, T.Tensor)
-evaluatePolicy _ _ 0 _ _ states buffer total = pure (buffer, states, total)
-evaluatePolicy episode iteration step agent@Agent{..} envUrl states buffer total = do
+evaluatePolicy _ 0 _ _ states buffer total = pure (buffer, states, total)
+evaluatePolicy iteration step agent@Agent{..} envUrl states buffer total = do
 
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
@@ -271,8 +270,6 @@ evaluatePolicy episode iteration step agent@Agent{..} envUrl states buffer total
 
     let !buffer' = bufferPush bufferSize buffer states actions rewards states' dones
 
-    writeReward' episode iteration rewards
-
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
@@ -281,57 +278,62 @@ evaluatePolicy episode iteration step agent@Agent{..} envUrl states buffer total
         putStrLn $ "Environments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t" ++ show de
 
-    evaluatePolicy episode iteration step' agent envUrl states' buffer' total'
+    evaluatePolicy iteration step' agent envUrl states' buffer' total'
   where
     step'   = step - 1
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training
-runAlgorithm :: Int -> Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
+runAlgorithm :: Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
              -> T.Tensor -> T.Tensor -> IO Agent
-runAlgorithm episode iteration agent _ True _ _ rewards = do
-    putStrLn $ "Episode " ++ show episode ++ " done after " ++ show iteration 
-            ++ " iterations, with a total reward of " ++ show reward'
+runAlgorithm iteration agent _ True _ _ rewards = do
+    putStrLn $ "Finished " ++ show iteration ++ " iterations with total reward: "
+            ++ show reward'
     pure agent
   where
     --reward' = T.asValue . T.sumAll $ rewards :: Float
     reward' = T.asValue rewards :: Float
 
-runAlgorithm episode iteration agent envUrl _ buffer states total = do
+runAlgorithm iteration agent envUrl _ buffer states total = do
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
-        putStrLn $ "Episode " ++ show episode ++ ", Iteration " ++ show iteration
+        putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
-    (!memories', !states', !rewards) <- evaluatePolicy episode iteration numSteps 
-                                                   agent envUrl states buffer total
+    (!memories', !states', !rewards) <- evaluatePolicy iteration numSteps agent 
+                                                       envUrl states buffer total
 
     let !reward' = total + T.sumAll rewards
         !buffer' = bufferPush' bufferSize buffer memories'
 
     !agent' <- if bufferLength buffer' < batchSize 
                   then pure agent
-                  else updatePolicy episode iteration agent buffer' numEpochs
+                  else updatePolicy iteration agent buffer' numEpochs
 
-    runAlgorithm episode iteration' agent' envUrl done' buffer' states' reward'
+    when (iteration `elem` [0,10 .. numIterations]) do
+        saveAgent ptPath agent 
+
+    runAlgorithm iteration' agent' envUrl done' buffer' states' reward'
   where
-    done'      = iteration >= numIterations
     iteration' = iteration + 1
+    done'      = iteration' >= numIterations
+    ptPath     = "./models/" ++ algorithm
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
 train :: Int -> Int -> HymURL -> IO Agent
 train obsDim actDim envUrl = do
     remoteLogPath envUrl >>= setupLogging 
 
-    !agent <- mkAgent obsDim actDim >>= foldLoop' numEpisodes
-        (\agent' episode -> do
-            states' <- toFloatGPU <$> resetPool envUrl
-            keys <- infoPool envUrl
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
 
-            let !states    = processGace states' keys
-                !buffer = makeBuffer
-                !rewards = emptyTensor
+    let !states    = processGace states' keys
+        !buffer = makeBuffer
+        !rewards = emptyTensor
 
-            runAlgorithm episode 0 agent' envUrl False buffer states rewards)
+    !agent <- mkAgent obsDim actDim >>= 
+        (\agent' -> runAlgorithm 0 agent' envUrl False buffer states rewards)
+
     saveAgent ptPath agent 
+
     pure agent
   where 
       ptPath = "./models/" ++ algorithm
