@@ -68,7 +68,10 @@ Available options:
 
 ### Soft Actor Critic (SAC)
 
-[Arxiv](https://arxiv.org/abs/1801.01290)
+Soft Actor Critic (SAC) Agent with Prioritized Experience Replay (PER) for
+continuous action space.
+
+[Arxiv](https://arxiv.org/abs/1812.05905v2)
 
 ### Twin Delayed Deep Deterministic Policy Gradient (TD3)
 
