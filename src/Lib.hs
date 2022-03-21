@@ -12,16 +12,16 @@
 -- | Utility and Helper functions for EDELWACE
 module Lib where
 
-import Data.Char (isLower)
-import Data.List (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
-import Data.Maybe (fromJust)
+import Data.Char        (isLower)
+import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
+import Data.Maybe       (fromJust)
 import Data.Aeson
 import Network.Wreq
 import Control.Lens
 import Control.Monad
 import GHC.Generics
-import GHC.Float (float2Double)
-import Numeric.Limits (maxValue, minValue)
+import GHC.Float        (float2Double)
+import Numeric.Limits   (maxValue, minValue)
 import System.Directory
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
@@ -386,6 +386,19 @@ randomStepPool url = stepsToTuple <$> hymPoolRandomStep url
 randomActionPool :: HymURL -> IO T.Tensor
 randomActionPool url = mapToTensor <$> hymPoolRandomAction url
 
+-- | Optimizer moments at given prefix
+saveOptim :: T.Adam -> FilePath -> IO ()
+saveOptim optim prefix = do
+    T.save (T.m1 optim) (prefix ++ "M1.pt")
+    T.save (T.m2 optim) (prefix ++ "M2.pt")
+
+-- | Load Optimizer State
+loadOptim :: Int -> Float -> Float -> FilePath -> IO T.Adam
+loadOptim iter β1 β2 prefix = do
+    m1' <- T.load (prefix ++ "M1.pt")
+    m2' <- T.load (prefix ++ "M2.pt")
+    pure $ T.Adam β1 β2 m1' m2' iter
+
 ------------------------------------------------------------------------------
 -- Data Processing
 ------------------------------------------------------------------------------
@@ -437,47 +450,26 @@ createLogDir = createDirectoryIfMissing True
 setupLogging :: FilePath -> IO ()
 setupLogging remoteDir = do
     localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
-    localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
-    BS.writeFile localLoss   "Episode,Iteration,Model,Loss\n"
-    BS.writeFile localReward "Episode,Iteration,Env,Reward\n"
+    BS.writeFile localLoss   "Iteration,Model,Loss\n"
 
     createLogDir remoteDir
 
     doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
-    doesFileExist remoteReward >>= flip when (removeFile remoteReward)
 
     createFileLink localLoss   remoteLoss
-    createFileLink localReward remoteReward
   where
     remoteLoss   = remoteDir ++ "/loss.csv"
-    remoteReward = remoteDir ++ "/reward.csv"
 
 -- | Get SHACE Logging path to a given URL
 remoteLogPath :: HymURL -> IO FilePath
 remoteLogPath url = (++ "/model") <$> shaceLogPath url
 
--- | Append a line to the give log file
-writeLoss :: Int -> Int -> String -> Float -> IO ()
-writeLoss episode iteration model loss = BS.appendFile path line
+-- | Append a line to the give loss log file (w/o) episode
+writeLoss :: Int -> String -> Float -> IO ()
+writeLoss iteration model loss = BS.appendFile path line
   where
     path = "./log/loss.csv"
-    line = BS.pack $ show episode ++ "," ++ show iteration ++ "," 
-                                  ++ model ++ "," ++ show loss ++ "\n"
-
--- | Append a line to the give log file
-writeReward :: Int -> Int -> Int -> Float -> IO ()
-writeReward episode iteration env reward = BS.appendFile path line
-  where
-    path = "./log/reward.csv"
-    line = BS.pack $ show episode ++ "," ++ show iteration ++ "," ++ show env
-                                  ++ "," ++ show reward ++ "\n"
-
--- | Convenience function for logging an entire env tensor
-writeReward' :: Int -> Int -> T.Tensor -> IO ()
-writeReward' episode iteration reward = mapM_ (uncurry $ writeReward episode iteration) 
-                                              (zip [0,1 ..] reward')
-  where
-    reward' = T.asValue . T.squeezeAll $ reward :: [Float]
+    line = BS.pack $ show iteration ++ "," ++ model ++ "," ++ show loss ++ "\n"
 
 -- | Obtain current performance from a gace server and write/append to log
 writeEnvLog :: FilePath -> HymURL -> IO ()
