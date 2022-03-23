@@ -415,8 +415,10 @@ processGace obs Info {..} = states
     states  = nanToNum'' obs''''
 
 -- | Scale reward to center
-scaleRewards :: T.Tensor -> T.Tensor -> T.Tensor
-scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor)
+scaleRewards :: T.Tensor -> Float -> T.Tensor
+scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor')
+  where
+    factor' = toTensor factor
  
 ------------------------------------------------------------------------------
 -- Data Logging

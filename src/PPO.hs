@@ -120,11 +120,15 @@ mkAgent obsDim actDim = do
     φ' <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
     θ' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim)
 
-    logStd' <- T.makeIndependent . toFloatGPU $ T.zeros' [1]
+    logStd' <- if actionSpace == Discrete 
+                  then T.makeIndependent  emptyTensor
+                  else T.makeIndependent . toFloatGPU $ T.zeros' [1]
 
     let params = NN.flattenParameters φ' 
               ++ NN.flattenParameters θ' 
-              ++ NN.flattenParameters [logStd']
+              ++ (if actionSpace == Discrete 
+                     then []
+                     else NN.flattenParameters [logStd'])
         optim' = T.mkAdam 0 β1 β2 params
 
     pure $ Agent φ' θ' logStd' optim'
@@ -135,7 +139,9 @@ saveAgent path Agent{..} = do
 
         T.saveParams φ         (path ++ "/actor.pt")
         T.saveParams θ         (path ++ "/critic.pt")
-        T.save       [logStd'] (path ++ "/logStd.pt")
+
+        when (actionSpace == Discrete) do
+            T.save [logStd'] (path ++ "/logStd.pt")
 
         saveOptim optim        (path ++ "/optim")
 
@@ -151,7 +157,10 @@ loadAgent path obsDim iter actDim = do
         fφ      <- T.loadParams φ   (path ++ "/actor.pt")
         fθ      <- T.loadParams θ   (path ++ "/critic.pt")
 
-        flogStd <- T.load (path ++ "/logStd.pt") >>= T.makeIndependent . head
+        flogStd <- if actionSpace == Discrete 
+                      then T.makeIndependent emptyTensor
+                      else T.load (path ++ "/logStd.pt") 
+                                >>= T.makeIndependent . head
 
         fopt     <- loadOptim iter β1 β2 (path ++ "/optim")
        
@@ -199,63 +208,71 @@ act :: ActionSpace -> Agent -> T.Tensor -> T.Tensor
 act Discrete agent states actions = (entropy, logProbs, values)
   where
     (dist, values) = actDiscrete agent states
-    entropy        = T.mean $ D.entropy dist
-    logProbs      = D.logProb dist actions
+    entropy        = T.reshape [-1,1] $ D.entropy dist
+    logProbs       = T.reshape [-1,1] $ D.logProb dist actions
 act Continuous agent states actions = (entropy, logProbs, values)
   where
     (dist, values) = actContinous agent states
-    entropy        = T.mean $ D.entropy dist
+    entropy        = D.entropy dist
     logProbs       = D.logProb dist actions
 
 -- | Get actions, logprobs and values for evaluation
 act' :: ActionSpace -> Agent -> T.Tensor
-    -> IO (T.Tensor, T.Tensor, T.Tensor)
+     -> IO (T.Tensor, T.Tensor, T.Tensor)
 act' Discrete agent states = do
     (dist, values) <- actDiscrete' agent states
-    actions <- T.reshape [-1,1] <$> D.sample dist [1]
-    let logProbs = T.reshape [-1,1] $ D.logProb dist actions
+    actions        <- T.reshape [-1,1] <$> D.sample dist [1]
+    let logProbs    = T.reshape [-1,1]  $ D.logProb dist actions
     pure (actions, logProbs, values)
 act' Continuous agent states = do
     (dist, values) <- actContinous' agent states
-    actions <- T.clamp (- 1.0) 1.0 <$> D.sample dist []
-    let logProbs = D.logProb dist actions
+    actions        <- T.clamp (- 1.0) 1.0 <$> D.sample dist []
+    let logProbs   = D.logProb dist actions
     pure (actions, logProbs, values)
 
 ------------------------------------------------------------------------------
 -- Training
 ------------------------------------------------------------------------------
 
+-- | No need to update / backprop logStd for discrete Agent
+updateAgent :: ActionSpace -> Agent -> T.Tensor -> IO Agent
+updateAgent Discrete Agent{..} loss = do
+    ((φ', θ'), optim') <- T.runStep (φ, θ) optim loss η
+    pure $ Agent φ' θ' logStd optim'
+updateAgent Continuous Agent{..} loss = do
+    ((φ', θ', logStd'), optim') <- T.runStep (φ, θ, logStd) optim loss η
+    pure $ Agent φ' θ' logStd' optim'
+
 -- | Policy Update Step
 updateStep :: Agent -> MemoryLoader T.Tensor -> IO (Agent, T.Tensor)
-updateStep agent@Agent{..} MemoryLoader{..} = do
-
-    ((φ', θ', logStd'), optim') <- T.runStep (φ, θ, logStd) optim loss η
-
-    pure (Agent φ' θ' logStd' optim', loss)
+updateStep agent MemoryLoader{..} = do
+    agent' <- updateAgent actionSpace agent loss
+    pure (agent', loss)
   where
-    (entropy, logProbs, value) 
-           = act actionSpace agent loaderStates loaderActions
-    ratios = T.exp $ logProbs - loaderLogPorbs
-    surr1  = ratios * loaderAdvantages
-    surr2  = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
-    πLoss  = T.mean $ fst . T.minDim (T.Dim 1) T.KeepDim 
-           $ T.cat (T.Dim 1) [surr1, surr2]
-    qLoss  = T.mean $ T.pow (2.0 :: Float) (loaderReturns - value)
-    loss   = 0.5 * (- πLoss) + qLoss - δ * entropy
+    (entropies, logProbs, values) 
+             = act actionSpace agent loaderStates loaderActions
+    rewards  = scaleRewards loaderReturns rewardScale
+    ratios   = T.exp $ logProbs - loaderLogPorbs
+    surr1    = ratios * loaderAdvantages
+    surr2    = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
+    πLoss    = T.mean . fst . T.minDim (T.Dim 1) T.KeepDim
+             $ T.cat (T.Dim 1) [surr1, surr2]
+    qLoss    = T.mseLoss values rewards
+    loss     = T.mean $ (- πLoss) + 0.5 * qLoss - δ * entropies
  
 -- | Run Policy Update
-updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> IO Agent
-updatePolicy iteration epoch agent loader | loaderLength loader <= 0 = pure agent
-                                          | otherwise = do
-    (agent', loss) <- updateStep agent batch
-
-    when (verbose && loaderLength loader == 1) do
-        putStrLn $ "Iteration " ++ show iteration ++ " Epoch " ++ show epoch 
-                               ++ " Loss:\t" ++ show loss
-    
+updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> T.Tensor 
+             -> IO Agent
+updatePolicy iteration epoch agent (MemoryLoader [] [] [] [] []) loss = do
     writeLoss iteration "L" (T.asValue loss :: Float)
-
-    updatePolicy iteration epoch agent' loader'
+    when verbose do
+        putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
+    pure agent
+updatePolicy iteration epoch agent loader _ = do
+    (agent', loss') <- updateStep agent batch
+    when (verbose && epoch `elem` [0,10 .. numEpochs]) do
+        putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss'
+    updatePolicy iteration epoch agent' loader' loss'
   where
     batch   = head <$> loader
     loader' = tail <$> loader
@@ -263,24 +280,25 @@ updatePolicy iteration epoch agent loader | loaderLength loader <= 0 = pure agen
 -- | Evaluation Step
 evaluateStep :: Int -> Int -> Agent -> HymURL -> T.Tensor 
              -> ReplayMemory T.Tensor -> IO (ReplayMemory T.Tensor, T.Tensor)
-evaluateStep iteration 0 _ _ states mem = do
+evaluateStep _ 0 _ _ states mem = do
     when verbose do
-        putStrLn $ "Iteration " ++ show iteration ++ "\tAverage Reward:\t" 
-                ++ show men ++ "\n\t\tTotal Reward:\t" ++ show tot
+        let tot = T.sumAll . memRewards $ mem
+        putStrLn $ "\tStep " ++ show numSteps ++ "\tTotal Reward:\t" ++ show tot
     pure (mem, states)
-  where
-    men = T.mean . memRewards $ mem
-    tot = T.sumAll . memRewards $ mem
 evaluateStep iteration step agent envUrl states mem = do
-    (actions',logProbs',values') <- act' actionSpace agent states
+    (actions', logProbs', values')         <- act' actionSpace agent states
 
-    (!states'', !rewards', !dones, !infos) <- stepPool envUrl actions'
+    (!states'', !rewards', !dones, !infos) <- if actionSpace == Discrete
+                                                 then stepPool' envUrl actions'
+                                                 else stepPool  envUrl actions'
 
-    when (verbose && T.any dones) do
-        let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
-        putStrLn $ "\tEnvironments " ++ " done after " ++ show iteration 
-                ++ " iterations, resetting:\n\t\t" ++ show de
-   
+    writeReward iteration rewards'
+
+    when (verbose && step `elem` [0,10 .. numSteps]) do
+        let men = T.mean rewards'
+        putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps ++ ":\n"
+                             ++ "\t\tAverage Reward:\t" ++ show men
+
     let keys    = head infos
     !states' <- if T.any dones 
                 then flip processGace keys <$> resetPool' envUrl dones
@@ -306,7 +324,7 @@ runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> IO Agent
 runAlgorithm _ agent _ True _ = pure agent
 runAlgorithm iteration agent envUrl _ states = do
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when verbose do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
     (!mem', !states') <- evaluatePolicy iteration agent envUrl states
@@ -314,7 +332,7 @@ runAlgorithm iteration agent envUrl _ states = do
     let !loader = dataLoader mem' batchSize γ τ
 
     agent' <- T.foldLoop agent numEpochs 
-                    (\a epoch -> updatePolicy iteration epoch a loader)
+                    (\gnt epc -> updatePolicy iteration epc gnt loader emptyTensor)
 
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 

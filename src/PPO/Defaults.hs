@@ -63,6 +63,9 @@ aceVariant = 0
 -- | Discrete or Continuous action space
 actionSpace :: ActionSpace
 actionSpace = Discrete
+-- | Scale for reward centering
+rewardScale :: Float
+rewardScale = 1.0e-7
 -- | Factor for clipping
 ε :: Float
 ε        = 0.2
