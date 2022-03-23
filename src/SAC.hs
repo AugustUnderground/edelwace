@@ -25,11 +25,13 @@ module SAC ( algorithm
 import Lib
 import RPB
 import SAC.Defaults
+import qualified Normal                           as D
 
 import Control.Monad
 import GHC.Generics
-import qualified Torch    as T
-import qualified Torch.NN as NN
+import qualified Torch                            as T
+import qualified Torch.NN                         as NN
+import qualified Torch.Distributions.Distribution as D
 
 ------------------------------------------------------------------------------
 -- Neural Networks
@@ -196,16 +198,16 @@ act Agent{..} !s = do
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
 evaluate Agent{..} !s εN = do
     ε <- normal' [1]
-    z' <- sample n
+    z' <- D.sample n []
     let a  = T.tanh (μ + σ * ε)
-        l1 = logProb n z'
+        l1 = D.logProb n z'
         l2 = T.log $ 1.0 - T.pow (2.0 :: Float) a + εN
         p  = l1 - l2
     pure (a,p)
   where
     (μ,σ') = π φ s
     σ      = T.exp σ'
-    n      = Normal μ σ
+    n      = D.Normal μ σ
 
 ------------------------------------------------------------------------------
 -- Training
