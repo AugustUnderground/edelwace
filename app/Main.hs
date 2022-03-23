@@ -8,7 +8,7 @@ module Main where
 import Lib hiding (info)
 import qualified SAC
 import qualified TD3
-import qualified PPO.Discrete as PPO
+import qualified PPO
 
 import Control.Monad
 import Options.Applicative

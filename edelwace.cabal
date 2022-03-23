@@ -28,9 +28,9 @@ source-repository head
 library
   exposed-modules:
       Lib
+      Normal
       PPO
       PPO.Defaults
-      PPO.Discrete
       RPB
       SAC
       SAC.Defaults
