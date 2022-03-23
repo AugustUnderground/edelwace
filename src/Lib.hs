@@ -199,42 +199,8 @@ normal' dims = T.randnIO dims opts
 normal :: T.Tensor -> T.Tensor -> IO T.Tensor
 normal μ σ = toFloatGPU <$> T.normalIO μ σ
 
--- | Normal Distribution until HaskTorch brings it's own
-data Normal = Normal { loc   :: T.Tensor
-                     , scale :: T.Tensor  
-                     } deriving (Generic, Show)
-
--- | Sample from Normal Distribution
-sample :: Normal -> IO T.Tensor
-sample Normal{..} = do
-    x <- T.randnLikeIO loc
-    pure $ x * scale + loc
-
--- | PDF for given Normal Distribution
-prob :: Normal -> T.Tensor -> T.Tensor
-prob Normal{..} x = (1.0 / (scale * T.sqrt (2.0 * π)))
-                  * T.exp ((- 0.5) * T.pow (2.0 :: Float) ((x - loc) / scale))
-  where
-    dev = T.device loc
-    opts = T.withDType T.Float . T.withDevice dev $ T.defaultOpts
-    π = T.asTensor' (pi :: Float) opts
-
--- | logarithmic probabilites for given Normal Distribution
-logProb :: Normal -> T.Tensor -> T.Tensor
-logProb n x = T.log $ prob n x
-
--- | Maximum Entropy of Normal Distribution
-entropy :: Normal -> T.Tensor
-entropy Normal{..} = 0.5 * T.log (e * 2.0 * π * T.pow (2.0 :: Float) σ)
-  where
-    dev  = T.device loc
-    opts = T.withDType T.Float . T.withDevice dev $ T.defaultOpts
-    e    = T.asTensor' (exp 1 :: Float) opts
-    π    = T.asTensor' (pi :: Float) opts
-    σ    = scale
-    
 ------------------------------------------------------------------------------
--- Hym Server Interaction
+-- Hym Server Interaction and Environment
 ------------------------------------------------------------------------------
 
 -- | Info object gotten form stepping
@@ -255,6 +221,10 @@ instance ToJSON Step
 
 -- | Base Route to Hym Server
 type HymURL = String
+
+-- | Possible Action Spaces
+data ActionSpace = Continuous | Discrete
+    deriving (Show, Eq)
 
 -- | Convert a Map to a Tensor where Pool index is a dimension
 mapToTensor :: M.Map Int [Float] -> T.Tensor
