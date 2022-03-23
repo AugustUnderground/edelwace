@@ -5,10 +5,10 @@
 
 module Main where
 
-import Lib                  hiding (info)
+import Lib hiding (info)
 import qualified SAC
 import qualified TD3
-import qualified PPO
+import qualified PPO.Discrete as PPO
 
 import Control.Monad
 import Options.Applicative

@@ -28,7 +28,7 @@ numEpochs :: Int
 numEpochs     = 20
 -- | Number of iterations
 numIterations :: Int
-numIterations = 150
+numIterations = round (1.0e6 :: Float)
 -- | Early stop criterion
 earlyStop :: Float
 earlyStop     = -500.0

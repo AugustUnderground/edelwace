@@ -260,9 +260,13 @@ type HymURL = String
 mapToTensor :: M.Map Int [Float] -> T.Tensor
 mapToTensor = toTensor . M.elems
 
--- | Convert Tensor to Map
+-- | Convert Tensor to Map (Continuous action spaces)
 tensorToMap :: T.Tensor -> M.Map Int [Float]
 tensorToMap = M.fromList . zip [0 .. ] . T.asValue
+
+-- | Convert Tensor to Map (Discrete action spaces)
+tensorToMap' :: T.Tensor -> M.Map Int Int
+tensorToMap' = M.fromList . zip [0 .. ] . T.asValue
 
 -- | Convert the Pooled Step Map to a Tuple
 stepsToTuple :: M.Map Int Step -> (T.Tensor, T.Tensor, T.Tensor, [Info])
@@ -304,9 +308,14 @@ hymPoolRandomAction = flip hymPoolList "random_action"
 hymPoolRandomStep :: HymURL -> IO (M.Map Int Step)
 hymPoolRandomStep url = fromJust . decodeStrict <$> hymGet url "random_step"
 
--- | Take Steps in All Environments
+-- | Take Steps in All Environments (Continuous)
 hymPoolStep :: HymURL -> M.Map Int [Float] -> IO (M.Map Int Step)
 hymPoolStep url action = fromJust . decodeStrict
+                      <$> hymPost url "step" (toJSON . M.mapKeys show $ action)
+
+-- | Take Steps in All Environments (Discrete)
+hymPoolStep' :: HymURL -> M.Map Int Int -> IO (M.Map Int Step)
+hymPoolStep' url action = fromJust . decodeStrict
                       <$> hymPost url "step" (toJSON . M.mapKeys show $ action)
 
 -- | Generate URL to a Hym-GACE server from meta information
@@ -374,9 +383,14 @@ infoPool url = do
     act <- actKeysPool url
     return (Info obs act)
 
--- | Step in an Environment
+-- | Step in a Control Environment
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
+
+-- | Step in a Discrete Environment
+stepPool' :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
+stepPool' url action = stepsToTuple 
+                    <$> (hymPoolStep' url . tensorToMap' . T.squeezeAll $ action)
 
 -- | Take a random Step an Environment
 randomStepPool :: HymURL -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])

@@ -97,10 +97,10 @@ wInit = 3.0e-3
 ηπ    = toTensor (1.0e-4 :: Float)
 -- | Learning Rate for Critic(s)
 ηq :: T.Tensor
-ηq    = toTensor (3.0e-4 :: Float)
+ηq    = toTensor (2.0e-4 :: Float)
 -- | Learning Rate for Alpha
 ηα :: T.Tensor
-ηα    = toTensor (3.0e-4 :: Float)
+ηα    = toTensor (2.0e-4 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
@@ -114,7 +114,7 @@ wInit = 3.0e-3
 
 -- | Maximum size of Replay Buffer
 bufferSize :: Int
-bufferSize = round (1.0e6 :: Float)
+bufferSize = round (5.0e6 :: Float)
 -- | Powerlaw Exponent
 αStart :: Float
 αStart     = 0.6

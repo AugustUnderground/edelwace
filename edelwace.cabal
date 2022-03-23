@@ -30,6 +30,7 @@ library
       Lib
       PPO
       PPO.Defaults
+      PPO.Discrete
       RPB
       SAC
       SAC.Defaults
