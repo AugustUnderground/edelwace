@@ -22,11 +22,14 @@ module PPO ( algorithm
 import Lib
 import RPB
 import PPO.Defaults
+import qualified Normal                           as D
 
 import Control.Monad
 import GHC.Generics
-import qualified Torch    as T
-import qualified Torch.NN as NN
+import qualified Torch                            as T
+import qualified Torch.NN                         as NN
+import qualified Torch.Distributions.Distribution as D
+import qualified Torch.Distributions.Categorical  as D
 
 ------------------------------------------------------------------------------
 -- Neural Networks
@@ -70,14 +73,27 @@ instance T.Randomizable CriticNetSpec CriticNet where
                                          <*> ( T.sample (T.LinearSpec 256 1) 
                                                >>= weightInit' )
 
--- | Actor Network Forward Pass
-π :: ActorNet -> T.Tensor -> T.Tensor
-π ActorNet{..} o = a
+-- | Continuous Actor Network Forward Pass
+πContinuous :: ActorNet -> T.Tensor -> T.Tensor
+πContinuous ActorNet{..} o = a
   where
     a = T.tanh . T.linear pLayer2 
       . T.relu . T.linear pLayer1 
       . T.relu . T.linear pLayer0 
       $ o
+
+-- | Discrete Actor Network Forward Pass
+πDiscrete :: ActorNet -> T.Tensor -> T.Tensor
+πDiscrete ActorNet{..} o = a
+  where
+    a = T.softmax (T.Dim 1) 
+      . T.linear pLayer2 . T.tanh 
+      . T.linear pLayer1 . T.tanh 
+      . T.linear pLayer0 $ o
+
+-- | Actor Network Forward Pass depending on `actionSpace`
+π :: ActorNet -> T.Tensor -> T.Tensor
+π = if actionSpace == Discrete then πDiscrete else πContinuous
 
 -- | Critic Network Forward Pass
 q :: CriticNet -> T.Tensor -> T.Tensor
@@ -142,24 +158,68 @@ loadAgent path obsDim iter actDim = do
         pure $ Agent fφ fθ flogStd fopt
 
 -- | Get value and distribution
-act :: Agent -> T.Tensor -> (Normal, T.Tensor)
-act Agent{..} s = (dist, value)
+actContinous :: Agent -> T.Tensor -> (D.Normal, T.Tensor)
+actContinous Agent{..} s = (dist, value)
   where
     value = q θ s
     μ  = π φ s
     σ' = T.exp . T.toDependent $ logStd
     σ  = T.expand σ' True (T.shape μ)
-    dist = Normal μ σ
+    dist = D.Normal μ σ
 
 -- | Get value and distribution without grad
-act' :: Agent -> T.Tensor -> IO (Normal, T.Tensor)
-act' Agent{..} s = do
+actContinous' :: Agent -> T.Tensor -> IO (D.Normal, T.Tensor)
+actContinous' Agent{..} s = do
     value <- T.detach $ q θ s
     μ  <- T.detach $ π φ s
     σ' <- T.detach $ T.exp . T.toDependent $ logStd
     let σ = T.expand σ' True (T.shape μ)
-        dist = Normal μ σ
+        dist = D.Normal μ σ
     pure (dist, value)
+
+-- | Get value and distribution
+actDiscrete :: Agent -> T.Tensor -> (D.Categorical, T.Tensor)
+actDiscrete Agent{..} s = (dist, value)
+  where
+    value = q θ s
+    probs = π φ s
+    dist  = D.fromProbs probs
+
+-- | Get value and distribution without grad
+actDiscrete' :: Agent -> T.Tensor -> IO (D.Categorical, T.Tensor)
+actDiscrete' Agent{..} s = do
+    value <- T.detach $ q θ s
+    probs <- T.detach $ π φ s
+    let dist = D.fromProbs probs
+    pure (dist, value)
+
+-- | Get entropy, logprobs and values for training
+act :: ActionSpace -> Agent -> T.Tensor -> T.Tensor
+    -> (T.Tensor, T.Tensor, T.Tensor)
+act Discrete agent states actions = (entropy, logProbs, values)
+  where
+    (dist, values) = actDiscrete agent states
+    entropy        = T.mean $ D.entropy dist
+    logProbs      = D.logProb dist actions
+act Continuous agent states actions = (entropy, logProbs, values)
+  where
+    (dist, values) = actContinous agent states
+    entropy        = T.mean $ D.entropy dist
+    logProbs       = D.logProb dist actions
+
+-- | Get actions, logprobs and values for evaluation
+act' :: ActionSpace -> Agent -> T.Tensor
+    -> IO (T.Tensor, T.Tensor, T.Tensor)
+act' Discrete agent states = do
+    (dist, values) <- actDiscrete' agent states
+    actions <- T.reshape [-1,1] <$> D.sample dist [1]
+    let logProbs = T.reshape [-1,1] $ D.logProb dist actions
+    pure (actions, logProbs, values)
+act' Continuous agent states = do
+    (dist, values) <- actContinous' agent states
+    actions <- T.clamp (- 1.0) 1.0 <$> D.sample dist []
+    let logProbs = D.logProb dist actions
+    pure (actions, logProbs, values)
 
 ------------------------------------------------------------------------------
 -- Training
@@ -173,16 +233,15 @@ updateStep agent@Agent{..} MemoryLoader{..} = do
 
     pure (Agent φ' θ' logStd' optim', loss)
   where
-    (dist,value) = act agent loaderStates
-    entrpy       = T.mean $ entropy dist
-    logprobs'    = logProb dist loaderActions
-    ratios       = T.exp $ logprobs' - loaderLogPorbs
-    surr1        = ratios * loaderAdvantages
-    surr2        = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
-    πLoss        = T.mean $ fst . T.minDim (T.Dim 1) T.KeepDim 
-                 $ T.cat (T.Dim 1) [surr1, surr2]
-    qLoss        = T.mean $ T.pow (2.0 :: Float) (loaderReturns - value)
-    loss         = 0.5 * (- πLoss) + qLoss - δ * entrpy
+    (entropy, logProbs, value) 
+           = act actionSpace agent loaderStates loaderActions
+    ratios = T.exp $ logProbs - loaderLogPorbs
+    surr1  = ratios * loaderAdvantages
+    surr2  = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
+    πLoss  = T.mean $ fst . T.minDim (T.Dim 1) T.KeepDim 
+           $ T.cat (T.Dim 1) [surr1, surr2]
+    qLoss  = T.mean $ T.pow (2.0 :: Float) (loaderReturns - value)
+    loss   = 0.5 * (- πLoss) + qLoss - δ * entropy
  
 -- | Run Policy Update
 updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> IO Agent
@@ -213,10 +272,8 @@ evaluateStep iteration 0 _ _ states mem = do
     men = T.mean . memRewards $ mem
     tot = T.sumAll . memRewards $ mem
 evaluateStep iteration step agent envUrl states mem = do
-    (dist,values') <- act' agent states
+    (actions',logProbs',values') <- act' actionSpace agent states
 
-    actions' <- T.clamp (- 1.0) 1.0 <$> sample dist 
-    let logprobs' = logProb dist actions'
     (!states'', !rewards', !dones, !infos) <- stepPool envUrl actions'
 
     when (verbose && T.any dones) do
@@ -230,7 +287,7 @@ evaluateStep iteration step agent envUrl states mem = do
                 else pure $ processGace states'' keys
 
     let masks' = T.logicalNot dones
-        mem'   = memoryPush mem states' actions' logprobs' rewards' values' masks'
+        mem'   = memoryPush mem states' actions' logProbs' rewards' values' masks'
 
     evaluateStep iteration step' agent envUrl states' mem'
   where

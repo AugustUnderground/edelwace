@@ -22,10 +22,10 @@ numEpisodes :: Int
 numEpisodes   = 666
 -- | How many steps to take in env
 numSteps :: Int
-numSteps      = 13
+numSteps      = 64
 -- | How many gradient update steps
 numEpochs :: Int
-numEpochs     = 20
+numEpochs     = 16
 -- | Number of iterations
 numIterations :: Int
 numIterations = round (1.0e6 :: Float)
@@ -34,7 +34,7 @@ earlyStop :: Float
 earlyStop     = -500.0
 -- | Size of the batches during epoch
 batchSize :: Int
-batchSize     = 64
+batchSize     = 128
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
@@ -60,18 +60,21 @@ aceVariant = 0
 --  PPO Algorithm Hyper Parameters
 ------------------------------------------------------------------------------
 
+-- | Discrete or Continuous action space
+actionSpace :: ActionSpace
+actionSpace = Discrete
 -- | Factor for clipping
 ε :: Float
-ε  = 0.2
+ε        = 0.2
 -- | Factor in loss function
 δ :: T.Tensor
-δ  = toTensor (0.001 :: Float)
+δ        = toTensor (0.001 :: Float)
 -- | Discount Factor
 γ :: T.Tensor
-γ  = toTensor (0.99 :: Float)
+γ        = toTensor (0.99 :: Float)
 -- | Avantage Factor
 τ :: T.Tensor
-τ  = toTensor (0.95 :: Float)
+τ        = toTensor (0.95 :: Float)
 
 ------------------------------------------------------------------------------
 -- Neural Network Parameter Settings
@@ -82,7 +85,7 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 η :: T.Tensor
-η  = toTensor (1.0e-3 :: Float)
+η  = toTensor (2.5e-4 :: Float)
 -- | Betas
 β1 :: Float
 β1 = 0.9
