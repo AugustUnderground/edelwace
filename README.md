@@ -68,16 +68,21 @@ Available options:
 
 ### Soft Actor Critic (SAC)
 
-Soft Actor Critic (SAC) Agent with Prioritized Experience Replay (PER) for
-continuous action space.
+Soft Actor Critic (SAC) Agent for continuous action space.
 
 [Arxiv](https://arxiv.org/abs/1812.05905v2)
 
 ### Twin Delayed Deep Deterministic Policy Gradient (TD3)
 
+Twin Delayed Deep Deterministic Policy Gradient (TD3) Agent for continuous
+action space.
+
 [Arxiv](https://arxiv.org/abs/1802.09477)
 
 ### Proximal Policy Optimization (PPO)
+
+Proximal Policy Optimization (PPO) Agent for discrete and continuous action
+spaces.
 
 [Arxiv](https://arxiv.org/abs/1707.06347)
 
