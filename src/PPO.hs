@@ -264,14 +264,13 @@ updateStep agent MemoryLoader{..} = do
 updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> T.Tensor 
              -> IO Agent
 updatePolicy iteration epoch agent (MemoryLoader [] [] [] [] []) loss = do
-    writeLoss iteration "L" (T.asValue loss :: Float)
-    when verbose do
+    when (epoch == numEpochs) do
+        writeLoss iteration "L" (T.asValue loss :: Float)
+    when (verbose && epoch `elem` [1,4 .. numEpochs]) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
     pure agent
 updatePolicy iteration epoch agent loader _ = do
     (agent', loss') <- updateStep agent batch
-    when (verbose && epoch `elem` [0,10 .. numEpochs]) do
-        putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss'
     updatePolicy iteration epoch agent' loader' loss'
   where
     batch   = head <$> loader
@@ -292,12 +291,12 @@ evaluateStep iteration step agent envUrl states mem = do
                                                  then stepPool' envUrl actions'
                                                  else stepPool  envUrl actions'
 
-    writeReward iteration rewards'
-
     when (verbose && step `elem` [0,10 .. numSteps]) do
         let men = T.mean rewards'
-        putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps ++ ":\n"
-                             ++ "\t\tAverage Reward:\t" ++ show men
+        putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps 
+                             ++ ":\n\t\tAverage Reward:\t" ++ show men
+    when (step == 1) do
+        writeReward iteration rewards'
 
     let keys    = head infos
     !states' <- if T.any dones 
