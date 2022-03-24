@@ -20,7 +20,7 @@ verbose :: Bool
 verbose       = True
 -- | Replay Buffer Type
 bufferType :: Buffer
-bufferType = RPB
+bufferType    = RPB
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1

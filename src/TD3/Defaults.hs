@@ -22,7 +22,7 @@ numEpisodes :: Int
 numEpisodes   = 666
 -- | Horizon T
 numIterations :: Int
-numIterations = 30 -- 150
+numIterations = round (1.0e8 :: Float)
 -- | Number of Steps to take with policy
 numSteps :: Int
 numSteps = 1
