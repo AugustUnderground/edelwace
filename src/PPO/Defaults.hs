@@ -88,7 +88,7 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 η :: T.Tensor
-η  = toTensor (2.5e-4 :: Float)
+η  = toTensor (3.0e-4 :: Float)
 -- | Betas
 β1 :: Float
 β1 = 0.9
