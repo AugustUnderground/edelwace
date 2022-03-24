@@ -30,8 +30,8 @@ numEpochs     = 16
 numIterations :: Int
 numIterations = round (1.0e6 :: Float)
 -- | Early stop criterion
-earlyStop :: Float
-earlyStop     = -500.0
+earlyStop :: T.Tensor
+earlyStop     = toTensor (11.0 :: Float)
 -- | Size of the batches during epoch
 batchSize :: Int
 batchSize     = 128

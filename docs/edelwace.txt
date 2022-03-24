@@ -88,24 +88,6 @@ normal' :: [Int] -> IO Tensor
 -- | Generate Normally Distributed Random values given μs and σs
 normal :: Tensor -> Tensor -> IO Tensor
 
--- | Normal Distribution until HaskTorch brings it's own
-data Normal
-Normal :: Tensor -> Tensor -> Normal
-[loc] :: Normal -> Tensor
-[scale] :: Normal -> Tensor
-
--- | Sample from Normal Distribution
-sample :: Normal -> IO Tensor
-
--- | PDF for given Normal Distribution
-prob :: Normal -> Tensor -> Tensor
-
--- | logarithmic probabilites for given Normal Distribution
-logProb :: Normal -> Tensor -> Tensor
-
--- | Maximum Entropy of Normal Distribution
-entropy :: Normal -> Tensor
-
 -- | Info object gotten form stepping
 data Info
 Info :: ![String] -> ![String] -> Info
@@ -123,11 +105,19 @@ Step :: ![Float] -> !Float -> !Bool -> !Info -> Step
 -- | Base Route to Hym Server
 type HymURL = String
 
+-- | Possible Action Spaces
+data ActionSpace
+Continuous :: ActionSpace
+Discrete :: ActionSpace
+
 -- | Convert a Map to a Tensor where Pool index is a dimension
 mapToTensor :: Map Int [Float] -> Tensor
 
--- | Convert Tensor to Map
+-- | Convert Tensor to Map (Continuous action spaces)
 tensorToMap :: Tensor -> Map Int [Float]
+
+-- | Convert Tensor to Map (Discrete action spaces)
+tensorToMap' :: Tensor -> Map Int Int
 
 -- | Convert the Pooled Step Map to a Tuple
 stepsToTuple :: Map Int Step -> (Tensor, Tensor, Tensor, [Info])
@@ -153,8 +143,11 @@ hymPoolRandomAction :: HymURL -> IO (Map Int [Float])
 -- | Perform Random Actions in all Pooled Environments
 hymPoolRandomStep :: HymURL -> IO (Map Int Step)
 
--- | Take Steps in All Environments
+-- | Take Steps in All Environments (Continuous)
 hymPoolStep :: HymURL -> Map Int [Float] -> IO (Map Int Step)
+
+-- | Take Steps in All Environments (Discrete)
+hymPoolStep' :: HymURL -> Map Int Int -> IO (Map Int Step)
 
 -- | Generate URL to a Hym-GACE server from meta information
 aceURL :: String -> String -> String -> String -> String -> HymURL
@@ -196,8 +189,11 @@ numEnvsPool :: HymURL -> IO Int
 -- | Get Info without stepping
 infoPool :: HymURL -> IO Info
 
--- | Step in an Environment
+-- | Step in a Control Environment
 stepPool :: HymURL -> Tensor -> IO (Tensor, Tensor, Tensor, [Info])
+
+-- | Step in a Discrete Environment
+stepPool' :: HymURL -> Tensor -> IO (Tensor, Tensor, Tensor, [Info])
 
 -- | Take a random Step an Environment
 randomStepPool :: HymURL -> IO (Tensor, Tensor, Tensor, [Info])
@@ -215,7 +211,7 @@ loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
 processGace :: Tensor -> Info -> Tensor
 
 -- | Scale reward to center
-scaleRewards :: Tensor -> Tensor -> Tensor
+scaleRewards :: Tensor -> Float -> Tensor
 
 -- | Create a log directory
 createLogDir :: FilePath -> IO ()
@@ -237,16 +233,41 @@ writeEnvLog :: FilePath -> HymURL -> IO ()
 
 -- | Write an arbitrary Map to a log file for visualization
 writeLog :: FilePath -> Map String [Float] -> IO ()
-instance GHC.Show.Show Lib.Normal
-instance GHC.Generics.Generic Lib.Normal
 instance GHC.Show.Show Lib.Info
 instance GHC.Generics.Generic Lib.Info
 instance GHC.Show.Show Lib.Step
 instance GHC.Generics.Generic Lib.Step
+instance GHC.Classes.Eq Lib.ActionSpace
+instance GHC.Show.Show Lib.ActionSpace
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Step
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Step
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Info
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Info
+
+module Normal
+
+-- | Creates a normal (also called Gaussian) distribution parameterized by
+--   <a>loc</a> and <a>scale</a>. Example:
+--   
+--   <pre>
+--   &gt;&gt;&gt; m = Normal (asTensor ([0.0] :: [Float])) (asTensor ([1.0] :: [Float]))
+--   
+--   &gt;&gt;&gt; sample m []
+--   Tensor Float [1] [-0.1205   ]
+--   </pre>
+data Normal
+Normal :: Tensor -> Tensor -> Normal
+
+-- | mean of the distribution (often referred to as mu)
+[loc] :: Normal -> Tensor
+
+-- | standard deviation of the distribution (often referred to as sigma)
+[scale] :: Normal -> Tensor
+
+-- | PDF for given Normal Distribution
+prob :: Normal -> Tensor -> Tensor
+instance GHC.Show.Show Normal.Normal
+instance Torch.Distributions.Distribution.Distribution Normal.Normal
 
 
 -- | Proximal Policy Optimization Algorithm Defaults
@@ -271,7 +292,7 @@ numEpochs :: Int
 numIterations :: Int
 
 -- | Early stop criterion
-earlyStop :: Float
+earlyStop :: Tensor
 
 -- | Size of the batches during epoch
 batchSize :: Int
@@ -290,6 +311,12 @@ aceBackend :: String
 
 -- | ACE Environment variant
 aceVariant :: Int
+
+-- | Discrete or Continuous action space
+actionSpace :: ActionSpace
+
+-- | Scale for reward centering
+rewardScale :: Float
 
 -- | Factor for clipping
 ε :: Float
@@ -318,6 +345,18 @@ wInit :: Float
 
 -- | Replay Buffers and Memory Loaders
 module RPB
+
+-- | Indicate Buffer Type
+data Buffer
+
+-- | Normal Replay Buffer
+RPB :: Buffer
+
+-- | Prioritized Experience Replay
+PER :: Buffer
+
+-- | PPO Style replay Memory
+MEM :: Buffer
 
 -- | Strict Simple/Naive Replay Buffer
 data ReplayBuffer a
@@ -436,18 +475,29 @@ algorithm :: String
 -- | PPO Agent
 data Agent
 Agent :: ActorNet -> CriticNet -> IndependentTensor -> Adam -> Agent
+
+-- | Policy φ
 [φ] :: Agent -> ActorNet
+
+-- | Critic θ
 [θ] :: Agent -> CriticNet
+
+-- | Standard Deviation (Continuous)
 [logStd] :: Agent -> IndependentTensor
+
+-- | Joint Optimzier
 [optim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 
--- | Save an Agent to Disk
+-- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
 
--- | Actor Network Forward Pass
+-- | Load an Agent Checkpoint
+loadAgent :: String -> Int -> Int -> Int -> IO Agent
+
+-- | Actor Network Forward Pass depending on <a>actionSpace</a>
 π :: ActorNet -> Tensor -> Tensor
 
 -- | Critic Network Forward Pass
@@ -480,6 +530,9 @@ algorithm :: String
 -- | Print verbose debug output
 verbose :: Bool
 
+-- | Replay Buffer Type
+bufferType :: Buffer
+
 -- | How many steps to take in env
 numSteps :: Int
 
@@ -488,6 +541,9 @@ numEpochs :: Int
 
 -- | Total Number of iterations
 numIterations :: Int
+
+-- | Early stop criterion
+earlyStop :: Tensor
 
 -- | Size of the batches during epoch
 batchSize :: Int
@@ -577,16 +633,38 @@ algorithm :: String
 -- | SAC Agent
 data Agent
 Agent :: ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNet -> Adam -> Adam -> Adam -> Float -> IndependentTensor -> Adam -> Agent
+
+-- | Actor policy φ
 [φ] :: Agent -> ActorNet
+
+-- | Online Critic θ1
 [θ1] :: Agent -> CriticNet
+
+-- | Online Critic θ2
 [θ2] :: Agent -> CriticNet
+
+-- | Target Critic θ'1
 [θ1'] :: Agent -> CriticNet
+
+-- | Target Critic θ'2
 [θ2'] :: Agent -> CriticNet
+
+-- | Policy Optimizer
 [φOptim] :: Agent -> Adam
+
+-- | Critic 1 Optimizer
 [θ1Optim] :: Agent -> Adam
+
+-- | Critic 2 Optimizer
 [θ2Optim] :: Agent -> Adam
+
+-- | Target Entropy
 [h'] :: Agent -> Float
+
+-- | Temperature Coefficient
 [αLog] :: Agent -> IndependentTensor
+
+-- | Alpha Optimizer
 [αOptim] :: Agent -> Adam
 
 -- | Agent constructor
@@ -653,7 +731,7 @@ numSteps :: Int
 numEpochs :: Int
 
 -- | Early stop criterion
-earlyStop :: Float
+earlyStop :: Tensor
 
 -- | Mini batch of N transistions
 batchSize :: Int
@@ -725,21 +803,42 @@ algorithm :: String
 -- | TD3 Agent
 data Agent
 Agent :: ActorNet -> ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNet -> Adam -> Adam -> Adam -> Agent
+
+-- | Online Policy φ
 [φ] :: Agent -> ActorNet
+
+-- | Target Policy φ'
 [φ'] :: Agent -> ActorNet
+
+-- | Online Critic θ1
 [θ1] :: Agent -> CriticNet
+
+-- | Online Critic θ2
 [θ2] :: Agent -> CriticNet
+
+-- | Target Critic θ1
 [θ1'] :: Agent -> CriticNet
+
+-- | Target Critic θ2
 [θ2'] :: Agent -> CriticNet
+
+-- | Policy Optimizer
 [φOptim] :: Agent -> Adam
+
+-- | Critic 1 Optimizer
 [θ1Optim] :: Agent -> Adam
+
+-- | Critic 2 Optimizer
 [θ2Optim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 
--- | Save an Agent to Disk
+-- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
+
+-- | Load an Agent Checkpoint
+loadAgent :: String -> Int -> Int -> Int -> IO Agent
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> Tensor -> Tensor
@@ -750,15 +849,7 @@ q :: CriticNet -> Tensor -> Tensor -> Tensor
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
 
--- | Load an Actor Net loadActor :: String -&gt; Int -&gt; Int -&gt; IO
---   ActorNet
---   
---   Load an Critic Net loadCritic :: String -&gt; Int -&gt; Int -&gt; IO
---   CriticNet
---   
---   Load an Agent loadCritic :: String -&gt; IO Agent
---   
---   Add Exploration Noise to Action
+-- | Add Exploration Noise to Action
 addNoise :: Int -> Tensor -> IO Tensor
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on

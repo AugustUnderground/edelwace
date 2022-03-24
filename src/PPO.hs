@@ -46,14 +46,14 @@ newtype CriticNetSpec = CriticNetSpec { qObsDim :: Int }
 -- | Actor Network Architecture
 data ActorNet = ActorNet { pLayer0 :: T.Linear
                          , pLayer1 :: T.Linear
-                         , pLayer2 :: T.Linear }
-    deriving (Generic, Show, T.Parameterized)
+                         , pLayer2 :: T.Linear 
+                         } deriving (Generic, Show, T.Parameterized)
 
 -- | Critic Network Architecture
 data CriticNet = CriticNet { qLayer0 :: T.Linear
                            , qLayer1 :: T.Linear
-                           , qLayer2 :: T.Linear }
-    deriving (Generic, Show, T.Parameterized)
+                           , qLayer2 :: T.Linear 
+                           } deriving (Generic, Show, T.Parameterized)
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
@@ -108,10 +108,10 @@ q CriticNet{..} o = v
 ------------------------------------------------------------------------------
 
 -- | PPO Agent
-data Agent = Agent { φ      :: ActorNet
-                   , θ      :: CriticNet  
-                   , logStd :: T.IndependentTensor
-                   , optim  :: T.Adam
+data Agent = Agent { φ      :: ActorNet             -- ^ Policy φ
+                   , θ      :: CriticNet            -- ^ Critic θ
+                   , logStd :: T.IndependentTensor  -- ^ Standard Deviation (Continuous)
+                   , optim  :: T.Adam               -- ^ Joint Optimzier
                    } deriving (Generic, Show)
 
 -- | Agent constructor
@@ -336,9 +336,12 @@ runAlgorithm iteration agent envUrl _ states = do
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
 
+    let meanReward = T.mean . memRewards $ mem'
+        stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
+        done'      = (iteration >= numIterations) || stop
+
     runAlgorithm iteration' agent' envUrl done' states'
   where
-    done'      = iteration >= numIterations
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
 
