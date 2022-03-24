@@ -30,8 +30,8 @@ numSteps = 1
 numEpochs :: Int
 numEpochs = 1
 -- | Early stop criterion
-earlyStop :: Float
-earlyStop     = -500.0
+earlyStop :: T.Tensor
+earlyStop     = toTensor (11.0 :: Float)
 -- | Mini batch of N transistions
 batchSize :: Int
 batchSize     = 100

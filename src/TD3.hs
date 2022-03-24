@@ -45,14 +45,14 @@ data CriticNetSpec = CriticNetSpec { qObsDim :: Int, qActDim :: Int }
 -- | Actor Network Architecture
 data ActorNet = ActorNet { pLayer0 :: T.Linear
                          , pLayer1 :: T.Linear
-                         , pLayer2 :: T.Linear }
-    deriving (Generic, Show, T.Parameterized)
+                         , pLayer2 :: T.Linear 
+                         } deriving (Generic, Show, T.Parameterized)
 
 -- | Critic Network Architecture
 data CriticNet = CriticNet { qLayer0 :: T.Linear
                            , qLayer1 :: T.Linear
-                           , qLayer2 :: T.Linear }
-    deriving (Generic, Show, T.Parameterized)
+                           , qLayer2 :: T.Linear 
+                           } deriving (Generic, Show, T.Parameterized)
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
@@ -104,15 +104,15 @@ q' c1 c2 s a = v
 ------------------------------------------------------------------------------
 
 -- | TD3 Agent
-data Agent = Agent { φ       :: ActorNet  
-                   , φ'      :: ActorNet  
-                   , θ1      :: CriticNet  
-                   , θ2      :: CriticNet  
-                   , θ1'     :: CriticNet  
-                   , θ2'     :: CriticNet  
-                   , φOptim  :: T.Adam
-                   , θ1Optim :: T.Adam
-                   , θ2Optim :: T.Adam
+data Agent = Agent { φ       :: ActorNet    -- ^ Online Policy φ
+                   , φ'      :: ActorNet    -- ^ Target Policy φ'
+                   , θ1      :: CriticNet   -- ^ Online Critic θ1
+                   , θ2      :: CriticNet   -- ^ Online Critic θ2
+                   , θ1'     :: CriticNet   -- ^ Target Critic θ1
+                   , θ2'     :: CriticNet   -- ^ Target Critic θ2
+                   , φOptim  :: T.Adam      -- ^ Policy Optimizer
+                   , θ1Optim :: T.Adam      -- ^ Critic 1 Optimizer
+                   , θ2Optim :: T.Adam      -- ^ Critic 2 Optimizer
                    } deriving (Generic, Show)
 
 -- | Agent constructor
@@ -308,10 +308,13 @@ runAlgorithm iteration agent envUrl _ buffer states = do
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
 
+    let meanReward = T.mean . rpbRewards $ memories'
+        stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
+        done'      = (iteration >= numIterations) || stop
+
     runAlgorithm iteration' agent' envUrl done' buffer' states'
   where
     iteration' = iteration + 1
-    done'      = iteration' >= numIterations
     ptPath     = "./models/" ++ algorithm
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
@@ -322,7 +325,7 @@ train obsDim actDim envUrl = do
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
 
-    let !states    = processGace states' keys
+    let !states = processGace states' keys
         !buffer = makeBuffer
 
     !agent <- mkAgent obsDim actDim >>= 
