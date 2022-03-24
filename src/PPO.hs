@@ -300,8 +300,8 @@ evaluateStep iteration step agent envUrl states mem = do
 
     let keys    = head infos
     !states' <- if T.any dones 
-                then flip processGace keys <$> resetPool' envUrl dones
-                else pure $ processGace states'' keys
+                   then flip processGace keys <$> resetPool' envUrl dones
+                   else pure $ processGace states'' keys
 
     let masks' = T.logicalNot dones
         mem'   = memoryPush mem states' actions' logProbs' rewards' values' masks'

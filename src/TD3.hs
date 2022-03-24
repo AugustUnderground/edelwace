@@ -75,7 +75,7 @@ instance T.Randomizable CriticNetSpec CriticNet where
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
-π ActorNet{..} !o = a
+π ActorNet{..} o = a
   where
     a = T.tanh . T.linear pLayer2 
       . T.relu . T.linear pLayer1 
@@ -84,7 +84,7 @@ instance T.Randomizable CriticNetSpec CriticNet where
 
 -- | Critic Network Forward Pass
 q :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q CriticNet{..} !o !a = v
+q CriticNet{..} o a = v
   where 
     x = T.cat (T.Dim $ -1) [o,a]
     v = T.linear qLayer2 . T.relu
@@ -251,7 +251,7 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
 
 -- | Perform Policy Update Steps
 updatePolicy :: Int -> Agent -> ReplayBuffer T.Tensor -> Int -> IO Agent
-updatePolicy iteration !agent !buffer epochs = do
+updatePolicy iteration agent buffer epochs = do
     memories <- bufferRandomSample batchSize buffer
     updateStep iteration epochs agent memories
 
@@ -270,10 +270,10 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
 
     let keys   = head infos
     !states' <- if T.any dones 
-                then flip processGace keys <$> resetPool' envUrl dones
-                else pure $ processGace states'' keys
+                   then flip processGace keys <$> resetPool' envUrl dones
+                   else pure $ processGace states'' keys
 
-    let !buffer' = bufferPush bufferSize buffer states actions rewards states' dones
+    let buffer' = bufferPush bufferSize buffer states actions rewards states' dones
 
     when (verbose && iteration `elem` [0,10 .. numIterations]) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
@@ -299,7 +299,7 @@ runAlgorithm iteration agent envUrl _ buffer states = do
     (!memories', !states') <- evaluatePolicy iteration numSteps agent envUrl 
                                              states buffer
 
-    let !buffer' = bufferPush' bufferSize buffer memories'
+    let buffer' = bufferPush' bufferSize buffer memories'
 
     !agent' <- if bufferLength buffer' < batchSize 
                   then pure agent
@@ -326,7 +326,7 @@ train obsDim actDim envUrl = do
     keys    <- infoPool envUrl
 
     let !states = processGace states' keys
-        !buffer = makeBuffer
+        buffer = makeBuffer
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl False buffer states)

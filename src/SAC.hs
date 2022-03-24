@@ -187,7 +187,7 @@ loadAgent path obsDim iter actDim = do
 
 -- | Get an Action (no grad)
 act :: Agent -> T.Tensor -> IO T.Tensor
-act Agent{..} !s = do
+act Agent{..} s = do
     ε <- normal' [1]
     T.detach . T.tanh $ (μ + σ * ε)
   where
@@ -196,7 +196,7 @@ act Agent{..} !s = do
 
 -- | Get an action and log probs (grad)
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
-evaluate Agent{..} !s εN = do
+evaluate Agent{..} s εN = do
     ε <- normal' [1]
     z' <- D.sample n []
     let a  = T.tanh (μ + σ * ε)
@@ -304,7 +304,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
 -- | Perform Policy Update Steps (PER)
 updatePolicyPER :: Int -> Agent -> PERBuffer T.Tensor -> Int 
                 -> IO (PERBuffer T.Tensor, Agent)
-updatePolicyPER iteration !agent !buffer epochs = do
+updatePolicyPER iteration agent buffer epochs = do
     (memories, indices, weights) <- perSample buffer iteration batchSize
     let prios = perPriorities buffer
     (agent', prios') <- updateStepPER iteration epochs agent 
@@ -397,7 +397,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
 
 -- | Perform Policy Update Steps (RPB)
 updatePolicyRPB :: Int -> Agent -> ReplayBuffer T.Tensor -> Int -> IO Agent
-updatePolicyRPB iteration !agent !buffer epochs =
+updatePolicyRPB iteration agent buffer epochs =
     bufferRandomSample batchSize buffer >>= updateStepRPB iteration epochs agent
 
 -- | Buffer independent exploration step in the environment
@@ -462,8 +462,8 @@ runAlgorithmPER iteration agent envUrl _ buffer states = do
     (!memories', !states') <- evaluatePolicyPER iteration numSteps agent 
                                                 envUrl buffer states
 
-    let !buffer'' = perPush' buffer memories'
-        !bufLen   = bufferLength . perMemories $ buffer''
+    let buffer'' = perPush' buffer memories'
+        bufLen   = bufferLength . perMemories $ buffer''
 
     (!buffer', !agent') <- if bufLen < batchSize 
                               then pure (buffer'', agent)
@@ -493,12 +493,12 @@ runAlgorithmRPB iteration agent envUrl _ buffer states = do
     (!memories', !states') <- evaluatePolicyRPB iteration numSteps agent 
                                                 envUrl buffer states
 
-    let !buffer' = bufferPush' bufferSize buffer memories'
-        !bufLen  = bufferLength buffer'
+    let buffer' = bufferPush' bufferSize buffer memories'
+        bufLen  = bufferLength buffer'
 
-    (!agent') <- if bufLen < batchSize 
-                    then pure agent
-                    else updatePolicyRPB iteration agent buffer' numEpochs
+    !agent' <- if bufLen < batchSize 
+                  then pure agent
+                  else updatePolicyRPB iteration agent buffer' numEpochs
     
     when (iteration `elem` [0,10 .. numIterations]) do
         saveAgent ptPath agent 
