@@ -515,10 +515,10 @@ runAlgorithmRPB iteration agent envUrl _ buffer states = do
 -- | Handle training for different replay buffer types
 train' :: HymURL -> Buffer -> T.Tensor -> Agent -> IO Agent
 train' envUrl PER states agent = do
-    let !buffer = makePERBuffer bufferSize αStart βStart βFrames
+    let !buffer = mkPERBuffer bufferSize αStart βStart βFrames
     runAlgorithmPER 0 agent envUrl False buffer states
 train' envUrl RPB states agent = 
-    runAlgorithmRPB 0 agent envUrl False makeBuffer states
+    runAlgorithmRPB 0 agent envUrl False mkBuffer states
 train' _ _ _ _ = undefined
 
 -- | Train Soft Actor Critic Agent on Environment

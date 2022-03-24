@@ -316,7 +316,7 @@ evaluatePolicy :: Int -> Agent -> HymURL -> T.Tensor
 evaluatePolicy iteration agent envUrl states = do
     evaluateStep iteration numSteps agent envUrl states mem
   where
-    mem = makeMemory
+    mem = mkMemory
 
 -- | Run Proximal Porlicy Optimization Training
 runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> IO Agent

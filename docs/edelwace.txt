@@ -394,7 +394,7 @@ ReplayBuffer :: !a -> !a -> !a -> !a -> !a -> ReplayBuffer a
 [rpbDones] :: ReplayBuffer a -> !a
 
 -- | Create a new, empty Buffer on the CPU
-makeBuffer :: ReplayBuffer Tensor
+mkBuffer :: ReplayBuffer Tensor
 
 -- | How many Trajectories are currently stored in memory
 bufferLength :: ReplayBuffer Tensor -> Int
@@ -434,7 +434,7 @@ PERBuffer :: ReplayBuffer a -> !Tensor -> !Int -> !Float -> !Float -> !Int -> PE
 [perBetaFrames] :: PERBuffer a -> !Int
 
 -- | Create an empty PER Buffer
-makePERBuffer :: Int -> Float -> Float -> Int -> PERBuffer Tensor
+mkPERBuffer :: Int -> Float -> Float -> Int -> PERBuffer Tensor
 
 -- | Push new memories in a Buffer
 perPush :: PERBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> PERBuffer Tensor
@@ -474,7 +474,7 @@ ReplayMemory :: !a -> !a -> !a -> !a -> !a -> !a -> ReplayMemory a
 [memMasks] :: ReplayMemory a -> !a
 
 -- | Create a new, empty Buffer on the CPU
-makeMemory :: ReplayMemory Tensor
+mkMemory :: ReplayMemory Tensor
 
 -- | How many Trajectories are currently stored in memory
 memoryLength :: ReplayMemory Tensor -> Int
