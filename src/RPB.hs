@@ -5,21 +5,21 @@
 -- | Replay Buffers and Memory Loaders
 module RPB ( Buffer (..)
            , ReplayBuffer (..)
-           , makeBuffer
+           , mkBuffer
            , bufferLength
            , bufferPush
            , bufferPush'
            , bufferSample
            , bufferRandomSample
            , PERBuffer (..)
-           , makePERBuffer
+           , mkPERBuffer
            , perPush
            , perPush'
            , perSample 
            , perUpdate
            , betaByFrame
            , ReplayMemory (..)
-           , makeMemory
+           , mkMemory
            , memoryLength
            , memoryPush
            , memoryPush'
@@ -59,8 +59,8 @@ instance Functor ReplayBuffer where
   fmap f (ReplayBuffer s a r s' d) = ReplayBuffer (f s) (f a) (f r) (f s') (f d)
 
 -- | Create a new, empty Buffer on the CPU
-makeBuffer :: ReplayBuffer T.Tensor
-makeBuffer = ReplayBuffer ft ft ft ft bt
+mkBuffer :: ReplayBuffer T.Tensor
+mkBuffer = ReplayBuffer ft ft ft ft bt
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts
@@ -123,10 +123,10 @@ instance Functor PERBuffer where
   fmap f (PERBuffer m p c a bs bf) = PERBuffer (fmap f m) p c a bs bf
 
 -- | Create an empty PER Buffer
-makePERBuffer :: Int -> Float -> Float -> Int -> PERBuffer T.Tensor
-makePERBuffer = PERBuffer buf prio
+mkPERBuffer :: Int -> Float -> Float -> Int -> PERBuffer T.Tensor
+mkPERBuffer = PERBuffer buf prio
   where
-    buf  = makeBuffer
+    buf  = mkBuffer
     prio = emptyTensor
 
 -- | Push new memories in a Buffer
@@ -189,8 +189,8 @@ instance Functor ReplayMemory where
   fmap f (ReplayMemory s a l r v m) = ReplayMemory (f s) (f a) (f l) (f r) (f v) (f m)
 
 -- | Create a new, empty Buffer on the CPU
-makeMemory :: ReplayMemory T.Tensor
-makeMemory = ReplayMemory ft ft ft ft ft bt
+mkMemory :: ReplayMemory T.Tensor
+mkMemory = ReplayMemory ft ft ft ft ft bt
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts

@@ -326,7 +326,7 @@ train obsDim actDim envUrl = do
     keys    <- infoPool envUrl
 
     let !states = processGace states' keys
-        buffer = mkBuffer
+        buffer  = mkBuffer
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl False buffer states)

@@ -101,7 +101,7 @@ args = Args <$> strOption ( long "algorithm"
                            <> short 'o'
                            <> metavar "OBSERVATIONS" 
                            <> showDefault 
-                           <> value 40
+                           <> value 43
                            <> help "Dimensions of Observation Space" )
             <*> strOption ( long "path" 
                          <> short 'f'

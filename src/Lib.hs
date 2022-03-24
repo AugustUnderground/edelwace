@@ -390,11 +390,19 @@ loadOptim iter β1 β2 prefix = do
 -- Data Processing
 ------------------------------------------------------------------------------
 
+-- | Create Boolean Mask Tensor from list of indices.
+boolMask :: Int -> [Int] -> T.Tensor
+boolMask len idx = mask
+  where
+    mask = T.toDType T.Bool . toTensor $ map (`elem` idx) [0 .. (len - 1)]
+
 -- | Process / Sanitize the Observations from GACE
 processGace :: T.Tensor -> Info -> T.Tensor
 processGace obs Info {..} = states
   where
-    ok      = filter (\k -> ((k `elem` actions) || (isLower . head $ k))
+    ok      = filter (\k -> ( (k `elem` actions) 
+                           || (isLower . head $ k)
+                           || (k == "A") )
                          && not ("steps" `isInfixOf` k) 
                          && not ("vn_" `isPrefixOf` k)
                          && not ("v_" `isPrefixOf` k)
@@ -404,18 +412,23 @@ processGace obs Info {..} = states
             $ map (fromJust . flip elemIndex observations) ok
     idxI    = map (fromJust . flip elemIndex ok) 
             $ filter (\i -> ("i_" `isInfixOf` i) || (":id" `isSuffixOf` i)) ok
-    mskI    = T.toDType T.Bool . toTensor $ map (`elem` idxI) [0 .. (length ok - 1)]
+    mskI    = boolMask (length ok) idxI
     frqs    = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
     idxF    = map (fromJust . flip elemIndex ok) 
-            $ filter (\f -> any (`isInfixOf` f) frqs || (":fug" `isSuffixOf` f)) ok
-    mskF    = T.toDType T.Bool . toTensor $ map (`elem` idxF) [0 .. (length ok - 1)]
-    idxV    = map (fromJust . flip elemIndex ok) $ filter ("voff_" `isPrefixOf`) ok
-    mskV    = T.toDType T.Bool . toTensor $ map (`elem` idxV) [0 .. (length ok - 1)]
-    obs'    = T.indexSelect 1 idx obs
-    obs''   = T.where' mskF (T.log10 . T.abs $ obs') obs' 
-    obs'''  = T.where' mskI (obs'' * 1.0e6) obs''
-    obs'''' = T.where' mskV (obs''' * 1.0e3) obs'''
-    states  = nanToNum'' obs''''
+            $ filter (\f -> any (`isInfixOf` f) frqs 
+                             || (":fug" `isSuffixOf` f)) ok
+    mskF    = boolMask (length ok) idxF
+    idxV    = map (fromJust . flip elemIndex ok) 
+            $ filter ("voff_" `isPrefixOf`) ok
+    mskV    = boolMask (length ok) idxV
+    idxA    = [fromJust $ elemIndex "A" ok]
+    mskA    = boolMask (length ok) idxA
+    obs1    = T.indexSelect 1 idx obs
+    obs2    = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
+    obs3    = T.where' mskI (obs2 * 1.0e6)  obs2
+    obs4    = T.where' mskV (obs3 * 1.0e3)  obs3
+    obs5    = T.where' mskA (obs4 * 1.0e10) obs4
+    states  = nanToNum'' obs5
 
 -- | Scale reward to center
 scaleRewards :: T.Tensor -> Float -> T.Tensor
