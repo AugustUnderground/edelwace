@@ -4,6 +4,7 @@
 module SAC.Defaults where
 
 import Lib
+import RPB
 
 import qualified Torch as T
 
@@ -17,6 +18,9 @@ algorithm     = "sac"
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True
+-- | Replay Buffer Type
+bufferType :: Buffer
+bufferType = RPB
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1
@@ -26,6 +30,9 @@ numEpochs     = 1
 -- | Total Number of iterations
 numIterations :: Int
 numIterations = round (1.0e8 :: Float)
+-- | Early stop criterion
+earlyStop :: T.Tensor
+earlyStop     = toTensor (11.0 :: Float)
 -- | Size of the batches during epoch
 batchSize :: Int
 batchSize     = 256
