@@ -204,18 +204,20 @@ normal μ σ = toFloatGPU <$> T.normalIO μ σ
 ------------------------------------------------------------------------------
 
 -- | Info object gotten form stepping
-data Info = Info { observations :: ![String]
-                 , actions      :: ![String] 
+data Info = Info { observations :: ![String]    -- ^ Observation Keys
+                 , actions      :: ![String]    -- ^ Action Keys
                  } deriving (Generic, Show)
+
 instance FromJSON Info
 instance ToJSON Info
 
--- | Environment Step
-data Step = Step { observation :: ![Float]
-                 , reward      :: !Float
-                 , done        :: !Bool
-                 , info        :: !Info 
+-- | Single Environment Step
+data Step = Step { observation :: ![Float]  -- ^ Observation Vector
+                 , reward      :: !Float    -- ^ Reward Scalar
+                 , done        :: !Bool     -- ^ Terminal Indicator
+                 , info        :: !Info     -- ^ Info
                  } deriving (Generic, Show)
+
 instance FromJSON Step
 instance ToJSON Step
 
@@ -223,7 +225,8 @@ instance ToJSON Step
 type HymURL = String
 
 -- | Possible Action Spaces
-data ActionSpace = Continuous | Discrete
+data ActionSpace = Continuous -- ^ Continuous Action Space
+                 | Discrete   -- ^ Discrete Action Space
     deriving (Show, Eq)
 
 -- | Convert a Map to a Tensor where Pool index is a dimension

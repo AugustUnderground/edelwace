@@ -91,15 +91,27 @@ normal :: Tensor -> Tensor -> IO Tensor
 -- | Info object gotten form stepping
 data Info
 Info :: ![String] -> ![String] -> Info
+
+-- | Observation Keys
 [observations] :: Info -> ![String]
+
+-- | Action Keys
 [actions] :: Info -> ![String]
 
--- | Environment Step
+-- | Single Environment Step
 data Step
 Step :: ![Float] -> !Float -> !Bool -> !Info -> Step
+
+-- | Observation Vector
 [observation] :: Step -> ![Float]
+
+-- | Reward Scalar
 [reward] :: Step -> !Float
+
+-- | Terminal Indicator
 [done] :: Step -> !Bool
+
+-- | Info
 [info] :: Step -> !Info
 
 -- | Base Route to Hym Server
@@ -107,7 +119,11 @@ type HymURL = String
 
 -- | Possible Action Spaces
 data ActionSpace
+
+-- | Continuous Action Space
 Continuous :: ActionSpace
+
+-- | Discrete Action Space
 Discrete :: ActionSpace
 
 -- | Convert a Map to a Tensor where Pool index is a dimension
@@ -361,10 +377,20 @@ MEM :: Buffer
 -- | Strict Simple/Naive Replay Buffer
 data ReplayBuffer a
 ReplayBuffer :: !a -> !a -> !a -> !a -> !a -> ReplayBuffer a
+
+-- | States
 [rpbStates] :: ReplayBuffer a -> !a
+
+-- | Actions
 [rpbActions] :: ReplayBuffer a -> !a
+
+-- | Rewards
 [rpbRewards] :: ReplayBuffer a -> !a
+
+-- | Next States
 [rpbStates'] :: ReplayBuffer a -> !a
+
+-- | Terminal Mask
 [rpbDones] :: ReplayBuffer a -> !a
 
 -- | Create a new, empty Buffer on the CPU
@@ -388,11 +414,23 @@ bufferRandomSample :: Int -> ReplayBuffer Tensor -> IO (ReplayBuffer Tensor)
 -- | Strict Prioritized Experience Replay Buffer
 data PERBuffer a
 PERBuffer :: ReplayBuffer a -> !Tensor -> !Int -> !Float -> !Float -> !Int -> PERBuffer a
+
+-- | Actual Buffer
 [perMemories] :: PERBuffer a -> ReplayBuffer a
+
+-- | Sample Weights
 [perPriorities] :: PERBuffer a -> !Tensor
+
+-- | Buffer Capacity
 [perCapacity] :: PERBuffer a -> !Int
+
+-- | Exponent Alpha
 [perAlpha] :: PERBuffer a -> !Float
+
+-- | Initial Exponent Beta
 [perBetaStart] :: PERBuffer a -> !Float
+
+-- | Beta Decay
 [perBetaFrames] :: PERBuffer a -> !Int
 
 -- | Create an empty PER Buffer
@@ -416,11 +454,23 @@ betaByFrame :: Float -> Int -> Int -> Float
 -- | Replay Memory
 data ReplayMemory a
 ReplayMemory :: !a -> !a -> !a -> !a -> !a -> !a -> ReplayMemory a
+
+-- | States
 [memStates] :: ReplayMemory a -> !a
+
+-- | Action
 [memActions] :: ReplayMemory a -> !a
+
+-- | Logarithmic Probability
 [memLogPorbs] :: ReplayMemory a -> !a
+
+-- | Rewards
 [memRewards] :: ReplayMemory a -> !a
+
+-- | Values
 [memValues] :: ReplayMemory a -> !a
+
+-- | Terminal Mask
 [memMasks] :: ReplayMemory a -> !a
 
 -- | Create a new, empty Buffer on the CPU
@@ -441,10 +491,20 @@ gae :: Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor
 -- | Memory Data Loader
 data MemoryLoader a
 MemoryLoader :: !a -> !a -> !a -> !a -> !a -> MemoryLoader a
+
+-- | States
 [loaderStates] :: MemoryLoader a -> !a
+
+-- | Actions
 [loaderActions] :: MemoryLoader a -> !a
+
+-- | Logarithmic Probabilities
 [loaderLogPorbs] :: MemoryLoader a -> !a
+
+-- | Returns
 [loaderReturns] :: MemoryLoader a -> !a
+
+-- | Advantages
 [loaderAdvantages] :: MemoryLoader a -> !a
 
 -- | Turn Replay memory into chunked data loader

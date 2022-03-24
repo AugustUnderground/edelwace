@@ -3,7 +3,8 @@
 {-# LANGUAGE RecordWildCards #-}
 
 -- | Replay Buffers and Memory Loaders
-module RPB ( ReplayBuffer (..)
+module RPB ( Buffer (..)
+           , ReplayBuffer (..)
            , makeBuffer
            , bufferLength
            , bufferPush
@@ -34,15 +35,24 @@ import qualified Torch as T
 import qualified Torch.Functional.Internal as T (indexAdd)
 
 ------------------------------------------------------------------------------
+-- What kind of buffer do you want?
+------------------------------------------------------------------------------
+
+-- | Indicate Buffer Type
+data Buffer = RPB -- ^ Normal Replay Buffer
+            | PER -- ^ Prioritized Experience Replay
+            | MEM -- ^ PPO Style replay Memory
+
+------------------------------------------------------------------------------
 -- Replay Buffer
 ------------------------------------------------------------------------------
 
 -- | Strict Simple/Naive Replay Buffer
-data ReplayBuffer a = ReplayBuffer { rpbStates  :: !a
-                                   , rpbActions :: !a
-                                   , rpbRewards :: !a
-                                   , rpbStates' :: !a
-                                   , rpbDones   :: !a
+data ReplayBuffer a = ReplayBuffer { rpbStates  :: !a   -- ^ States
+                                   , rpbActions :: !a   -- ^ Actions
+                                   , rpbRewards :: !a   -- ^ Rewards
+                                   , rpbStates' :: !a   -- ^ Next States
+                                   , rpbDones   :: !a   -- ^ Terminal Mask
                                    } deriving (Show, Eq)
 
 instance Functor ReplayBuffer where
@@ -101,12 +111,12 @@ bufferRandomSample batchSize buf = (`bufferSample` buf)
     i' = toFloatGPU $ T.ones' [bufferLength buf]
 
 -- | Strict Prioritized Experience Replay Buffer
-data PERBuffer a = PERBuffer { perMemories   :: ReplayBuffer a
-                             , perPriorities :: !T.Tensor
-                             , perCapacity   :: !Int
-                             , perAlpha      :: !Float
-                             , perBetaStart  :: !Float
-                             , perBetaFrames :: !Int 
+data PERBuffer a = PERBuffer { perMemories   :: ReplayBuffer a -- ^ Actual Buffer
+                             , perPriorities :: !T.Tensor      -- ^ Sample Weights
+                             , perCapacity   :: !Int           -- ^ Buffer Capacity
+                             , perAlpha      :: !Float         -- ^ Exponent Alpha
+                             , perBetaStart  :: !Float         -- ^ Initial Exponent Beta
+                             , perBetaFrames :: !Int           -- ^ Beta Decay
                              } deriving (Show, Eq)
 
 instance Functor PERBuffer where
@@ -167,12 +177,12 @@ perUpdate (PERBuffer m p c a bs bf) idx prio = buf'
 ------------------------------------------------------------------------------
 
 -- | Replay Memory
-data ReplayMemory a = ReplayMemory { memStates   :: !a
-                                   , memActions  :: !a
-                                   , memLogPorbs :: !a
-                                   , memRewards  :: !a
-                                   , memValues   :: !a
-                                   , memMasks    :: !a
+data ReplayMemory a = ReplayMemory { memStates   :: !a  -- ^ States
+                                   , memActions  :: !a  -- ^ Action
+                                   , memLogPorbs :: !a  -- ^ Logarithmic Probability
+                                   , memRewards  :: !a  -- ^ Rewards
+                                   , memValues   :: !a  -- ^ Values
+                                   , memMasks    :: !a  -- ^ Terminal Mask
                                    } deriving (Show, Eq)
 
 instance Functor ReplayMemory where
@@ -233,11 +243,11 @@ gae r v m v' γ τ = a
 ------------------------------------------------------------------------------
 
 -- | Memory Data Loader
-data MemoryLoader a = MemoryLoader { loaderStates     :: !a
-                                   , loaderActions    :: !a
-                                   , loaderLogPorbs   :: !a
-                                   , loaderReturns    :: !a
-                                   , loaderAdvantages :: !a
+data MemoryLoader a = MemoryLoader { loaderStates     :: !a -- ^ States
+                                   , loaderActions    :: !a -- ^ Actions
+                                   , loaderLogPorbs   :: !a -- ^ Logarithmic Probabilities
+                                   , loaderReturns    :: !a -- ^ Returns
+                                   , loaderAdvantages :: !a -- ^ Advantages
                                    } deriving (Show, Eq)
 
 instance Functor MemoryLoader where
