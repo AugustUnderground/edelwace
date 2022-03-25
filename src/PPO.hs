@@ -291,12 +291,12 @@ evaluateStep iteration step agent envUrl states mem = do
                                                  then stepPool' envUrl actions'
                                                  else stepPool  envUrl actions'
 
+    writeReward iteration (numSteps - step) rewards'
+
     when (verbose && step `mod` 10 == 0) do
         let men = T.mean rewards'
         putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps 
                              ++ ":\n\t\tAverage Reward:\t" ++ show men
-    when (step == 1) do
-        writeReward iteration step rewards'
 
     let keys    = head infos
     !states' <- if T.any dones 

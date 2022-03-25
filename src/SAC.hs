@@ -407,7 +407,7 @@ evaluateStep iteration step agent envUrl states = do
     actions <- act agent states
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    writeReward iteration step rewards
+    writeReward iteration (numSteps - step) rewards
  
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
