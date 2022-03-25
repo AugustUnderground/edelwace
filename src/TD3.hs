@@ -202,7 +202,7 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
         jQ1 = T.mseLoss v1 y
         jQ2 = T.mseLoss v2 y
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
     writeLoss iteration "Q1" (T.asValue jQ1 :: Float)
@@ -213,7 +213,7 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
 
     let updateActor :: IO (ActorNet, T.Adam)
         updateActor = do
-            when (verbose && iteration `elem` [0,10 .. numIterations]) do
+            when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
             writeLoss iteration "A" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
@@ -228,11 +228,11 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
             θ2Target' <- softSync τ θ2' θ2 
             pure (φTarget', θ1Target', θ2Target')
 
-    (φOnline', φOptim') <- if iteration `elem` [0,d .. numIterations]
+    (φOnline', φOptim') <- if iteration `mod` d == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
-    (φTarget', θ1Target', θ2Target') <- if iteration `elem` [0,d .. numIterations]
+    (φTarget', θ1Target', θ2Target') <- if iteration `mod` d == 0
                                            then syncTargets
                                            else pure (φ', θ1', θ2')
 
@@ -275,7 +275,7 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
 
     let buffer' = bufferPush bufferSize buffer states actions rewards states' dones
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
     when (verbose && T.any dones) do
@@ -293,7 +293,7 @@ runAlgorithm :: Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
 runAlgorithm _ agent _ True _ _ = pure agent
 runAlgorithm iteration agent envUrl _ buffer states = do
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
     (!memories', !states') <- evaluatePolicy iteration numSteps agent envUrl 
@@ -305,7 +305,7 @@ runAlgorithm iteration agent envUrl _ buffer states = do
                   then pure agent
                   else updatePolicy iteration agent buffer' numEpochs
 
-    when (iteration `elem` [0,10 .. numIterations]) do
+    when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
     let meanReward = T.mean . rpbRewards $ memories'

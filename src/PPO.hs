@@ -266,7 +266,7 @@ updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> T.Tensor
 updatePolicy iteration epoch agent (MemoryLoader [] [] [] [] []) loss = do
     when (epoch == numEpochs) do
         writeLoss iteration "L" (T.asValue loss :: Float)
-    when (verbose && epoch `elem` [1,4 .. numEpochs]) do
+    when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
     pure agent
 updatePolicy iteration epoch agent loader _ = do
@@ -291,7 +291,7 @@ evaluateStep iteration step agent envUrl states mem = do
                                                  then stepPool' envUrl actions'
                                                  else stepPool  envUrl actions'
 
-    when (verbose && step `elem` [0,10 .. numSteps]) do
+    when (verbose && step `mod` 10 == 0) do
         let men = T.mean rewards'
         putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps 
                              ++ ":\n\t\tAverage Reward:\t" ++ show men
@@ -333,7 +333,7 @@ runAlgorithm iteration agent envUrl _ states = do
     agent' <- T.foldLoop agent numEpochs 
                     (\gnt epc -> updatePolicy iteration epc gnt loader emptyTensor)
 
-    when (iteration `elem` [0,10 .. numIterations]) do
+    when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
     let meanReward = T.mean . memRewards $ mem'

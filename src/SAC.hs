@@ -240,7 +240,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηq
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
     
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
@@ -254,7 +254,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
             logπ_t0 <- T.clone logπ_t0' >>= T.detach
             -- let jα = T.mean (- α * logπ_t0 - α * h)
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
-            when (verbose && iteration `elem` [0,10 .. numIterations]) do
+            when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             writeLoss iteration "A" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
@@ -262,7 +262,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
         updateActor = do
             q_t0' <- T.detach $ q' θ1 θ2 s_t0 a_t0'
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
-            when (verbose && iteration `elem` [0,10 .. numIterations]) do
+            when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
             writeLoss iteration "P" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
@@ -272,15 +272,15 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
             θ2Target' <- softSync τ θ2' θ2 
             pure (θ1Target', θ2Target')
 
-    (αlog', αOptim') <- if iteration `elem` [0,d .. numIterations]
+    (αlog', αOptim') <- if iteration `mod` d == 0 
                                    then updateAlpha
                                    else pure (αLog, αOptim)
 
-    (φOnline', φOptim') <- if iteration `elem` [0,d .. numIterations]
+    (φOnline', φOptim') <- if iteration `mod` d == 0
                                       then updateActor
                                       else pure (φ, φOptim)
 
-    (θ1Target', θ2Target') <- if iteration `elem` [0,d .. numIterations]
+    (θ1Target', θ2Target') <- if iteration `mod` d == 0
                                            then syncCritic
                                            else pure (θ1', θ2')
 
@@ -338,7 +338,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηq
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
     
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
@@ -351,7 +351,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
         updateAlpha = do
             logπ_t0 <- T.clone logπ_t0' >>= T.detach
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
-            when (verbose && iteration `elem` [0,10 .. numIterations]) do
+            when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             writeLoss iteration "A" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
@@ -359,7 +359,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
         updateActor = do
             q_t0' <- T.detach $ q' θ1 θ2 s_t0 a_t0'
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
-            when (verbose && iteration `elem` [0,10 .. numIterations]) do
+            when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
             writeLoss iteration "P" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
@@ -369,15 +369,15 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
             θ2Target' <- softSync τ θ2' θ2 
             pure (θ1Target', θ2Target')
 
-    (αlog', αOptim') <- if iteration `elem` [0,d .. numIterations]
+    (αlog', αOptim') <- if iteration `mod` d == 0
                                    then updateAlpha
                                    else pure (αLog, αOptim)
 
-    (φOnline', φOptim') <- if iteration `elem` [0,d .. numIterations]
+    (φOnline', φOptim') <- if iteration `mod` d == 0
                                       then updateActor
                                       else pure (φ, φOptim)
 
-    (θ1Target', θ2Target') <- if iteration `elem` [0,d .. numIterations]
+    (θ1Target', θ2Target') <- if iteration `mod` d == 0
                                            then syncCritic
                                            else pure (θ1', θ2')
 
@@ -419,7 +419,7 @@ evaluateStep iteration agent envUrl states = do
                    then flip processGace keys <$> resetPool' envUrl dones
                    else pure $ processGace states'' keys
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
 
     pure (actions, rewards, states', dones)
@@ -456,7 +456,7 @@ runAlgorithmPER :: Int -> Agent -> HymURL -> Bool -> PERBuffer T.Tensor
 runAlgorithmPER _ agent _ True _ _ = pure agent
 runAlgorithmPER iteration agent envUrl _ buffer states = do
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
     (!memories', !states') <- evaluatePolicyPER iteration numSteps agent 
@@ -469,7 +469,7 @@ runAlgorithmPER iteration agent envUrl _ buffer states = do
                               then pure (buffer'', agent)
                               else updatePolicyPER iteration agent buffer'' numEpochs
     
-    when (iteration `elem` [0,10 .. numIterations]) do
+    when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
     let meanReward = T.mean . rpbRewards . perMemories $ memories'
@@ -487,7 +487,7 @@ runAlgorithmRPB :: Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
 runAlgorithmRPB _ agent _ True _ _ = pure agent
 runAlgorithmRPB iteration agent envUrl _ buffer states = do
 
-    when (verbose && iteration `elem` [0,10 .. numIterations]) do
+    when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
     (!memories', !states') <- evaluatePolicyRPB iteration numSteps agent 
@@ -500,7 +500,7 @@ runAlgorithmRPB iteration agent envUrl _ buffer states = do
                   then pure agent
                   else updatePolicyRPB iteration agent buffer' numEpochs
     
-    when (iteration `elem` [0,10 .. numIterations]) do
+    when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
     let meanReward = T.mean . rpbRewards $ memories'
