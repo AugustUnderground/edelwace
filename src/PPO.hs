@@ -264,8 +264,7 @@ updateStep agent MemoryLoader{..} = do
 updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> T.Tensor 
              -> IO Agent
 updatePolicy iteration epoch agent (MemoryLoader [] [] [] [] []) loss = do
-    when (epoch == numEpochs) do
-        writeLoss iteration "L" (T.asValue loss :: Float)
+    writeLoss iteration epoch "L" (T.asValue loss :: Float)
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
     pure agent

@@ -450,7 +450,7 @@ setupLogging remoteDir = do
     localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
     localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
 
-    BS.writeFile localLoss   "Iteration,Model,Loss\n"
+    BS.writeFile localLoss   "Iteration,Epoch,Model,Loss\n"
     BS.writeFile localReward "Iteration,Step,Env,Reward\n"
 
     createLogDir remoteDir
@@ -469,11 +469,12 @@ remoteLogPath :: HymURL -> IO FilePath
 remoteLogPath url = (++ "/model") <$> shaceLogPath url
 
 -- | Append a line to the given loss log file (w/o) episode
-writeLoss :: Int -> String -> Float -> IO ()
-writeLoss iteration model loss = BS.appendFile path line
+writeLoss :: Int -> Int -> String -> Float -> IO ()
+writeLoss iteration epoch model loss = BS.appendFile path line
   where
     path = "./log/loss.csv"
-    line = BS.pack $ show iteration ++ "," ++ model ++ "," ++ show loss ++ "\n"
+    line = BS.pack $ show iteration ++ "," ++ show epoch ++ "," ++ model 
+                                    ++ "," ++ show loss ++ "\n"
 
 -- | Append a line to the given reward log file (w/o) episode
 writeReward :: Int -> Int -> T.Tensor -> IO ()

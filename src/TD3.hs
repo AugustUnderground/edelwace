@@ -205,8 +205,8 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    writeLoss iteration "Q1" (T.asValue jQ1 :: Float)
-    writeLoss iteration "Q2" (T.asValue jQ2 :: Float)
+    writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
+    writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
@@ -215,7 +215,7 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
         updateActor = do
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            writeLoss iteration "A" (T.asValue jφ :: Float)
+            writeLoss iteration epoch "A" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s

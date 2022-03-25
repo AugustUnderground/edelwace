@@ -244,8 +244,8 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
-    writeLoss iteration "Q1" (T.asValue jQ1 :: Float)
-    writeLoss iteration "Q2" (T.asValue jQ2 :: Float)
+    writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
+    writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
         
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
@@ -256,7 +256,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
-            writeLoss iteration "A" (T.asValue jα :: Float)
+            writeLoss iteration epoch "A" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
         updateActor :: IO(ActorNet, T.Adam)
         updateActor = do
@@ -264,7 +264,7 @@ updateStepPER iteration epoch agent@Agent{..} memories@ReplayBuffer{..} weights 
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
-            writeLoss iteration "P" (T.asValue jπ :: Float)
+            writeLoss iteration epoch "P" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
         syncCritic :: IO (CriticNet, CriticNet)
         syncCritic = do
@@ -342,8 +342,8 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
-    writeLoss iteration "Q1" (T.asValue jQ1 :: Float)
-    writeLoss iteration "Q2" (T.asValue jQ2 :: Float)
+    writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
+    writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
         
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
@@ -353,7 +353,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
-            writeLoss iteration "A" (T.asValue jα :: Float)
+            writeLoss iteration epoch "A" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
         updateActor :: IO(ActorNet, T.Adam)
         updateActor = do
@@ -361,7 +361,7 @@ updateStepRPB iteration epoch agent@Agent{..} memories@ReplayBuffer{..} = do
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
-            writeLoss iteration "P" (T.asValue jπ :: Float)
+            writeLoss iteration epoch "P" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
         syncCritic :: IO (CriticNet, CriticNet)
         syncCritic = do
