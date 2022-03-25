@@ -223,6 +223,9 @@ saveOptim :: Adam -> FilePath -> IO ()
 -- | Load Optimizer State
 loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
 
+-- | Create Boolean Mask Tensor from list of indices.
+boolMask :: Int -> [Int] -> Tensor
+
 -- | Process / Sanitize the Observations from GACE
 processGace :: Tensor -> Info -> Tensor
 
@@ -242,7 +245,7 @@ remoteLogPath :: HymURL -> IO FilePath
 writeLoss :: Int -> String -> Float -> IO ()
 
 -- | Append a line to the given reward log file (w/o) episode
-writeReward :: Int -> Tensor -> IO ()
+writeReward :: Int -> Int -> Tensor -> IO ()
 
 -- | Obtain current performance from a gace server and write/append to log
 writeEnvLog :: FilePath -> HymURL -> IO ()

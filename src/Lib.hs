@@ -13,7 +13,7 @@
 module Lib where
 
 import Data.Char        (isLower)
-import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
+import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex, zip4)
 import Data.Maybe       (fromJust)
 import Data.Aeson
 import Network.Wreq
@@ -451,7 +451,7 @@ setupLogging remoteDir = do
     localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
 
     BS.writeFile localLoss   "Iteration,Model,Loss\n"
-    BS.writeFile localReward "Iteration,Env,Reward\n"
+    BS.writeFile localReward "Iteration,Step,Env,Reward\n"
 
     createLogDir remoteDir
 
@@ -476,13 +476,15 @@ writeLoss iteration model loss = BS.appendFile path line
     line = BS.pack $ show iteration ++ "," ++ model ++ "," ++ show loss ++ "\n"
 
 -- | Append a line to the given reward log file (w/o) episode
-writeReward :: Int -> T.Tensor -> IO ()
-writeReward iteration rewards = forM_ (zip3 (repeat iteration) env reward)
-                                      (\(i,e,r) -> BS.appendFile path 
-                                               <$> BS.pack 
-                                                $  show i ++ "," ++ show e 
-                                                          ++ "," ++ show r 
-                                                          ++ "\n")
+writeReward :: Int -> Int -> T.Tensor -> IO ()
+writeReward iteration step rewards = forM_ (zip4 (repeat iteration) (repeat step) 
+                                                 env reward)
+                                           (\(i,s,e,r) -> BS.appendFile path 
+                                                      <$> BS.pack 
+                                                       $  show i ++ "," 
+                                                       ++ show s ++ "," 
+                                                       ++ show e ++ "," 
+                                                       ++ show r ++ "\n")
   where
     path   = "./log/reward.csv"
     reward = T.asValue (T.squeezeAll rewards) :: [Float]

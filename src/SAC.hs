@@ -401,13 +401,13 @@ updatePolicyRPB iteration agent buffer epochs =
     bufferRandomSample batchSize buffer >>= updateStepRPB iteration epochs agent
 
 -- | Buffer independent exploration step in the environment
-evaluateStep :: Int -> Agent -> HymURL -> T.Tensor 
+evaluateStep :: Int -> Int -> Agent -> HymURL -> T.Tensor 
              -> IO (T.Tensor, T.Tensor, T.Tensor, T.Tensor)
-evaluateStep iteration agent envUrl states = do
+evaluateStep iteration step agent envUrl states = do
     actions <- act agent states
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    writeReward iteration rewards
+    writeReward iteration step rewards
  
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
@@ -430,7 +430,7 @@ evaluatePolicyPER :: Int -> Int -> Agent -> HymURL -> PERBuffer T.Tensor
 evaluatePolicyPER _ 0 _ _ buffer states = pure (buffer, states)
 evaluatePolicyPER iteration step agent envUrl buffer states = do
 
-    (actions, rewards, states', dones) <- evaluateStep iteration agent envUrl states
+    (actions, rewards, states', dones) <- evaluateStep iteration step agent envUrl states
     let buffer' = perPush buffer states actions rewards states' dones
 
     evaluatePolicyPER iteration step' agent envUrl buffer' states'
@@ -443,7 +443,7 @@ evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> ReplayBuffer T.Tensor
 evaluatePolicyRPB _ 0 _ _ buffer states = pure (buffer, states)
 evaluatePolicyRPB iteration step agent envUrl buffer states = do
 
-    (actions, rewards, states', dones) <- evaluateStep iteration agent envUrl states
+    (actions, rewards, states', dones) <- evaluateStep iteration step agent envUrl states
     let buffer' = bufferPush bufferSize buffer states actions rewards states' dones
 
     evaluatePolicyRPB iteration step' agent envUrl buffer' states'

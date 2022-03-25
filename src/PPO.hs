@@ -296,7 +296,7 @@ evaluateStep iteration step agent envUrl states mem = do
         putStrLn $ "\tStep " ++ show (numSteps - step) ++ " / " ++ show numSteps 
                              ++ ":\n\t\tAverage Reward:\t" ++ show men
     when (step == 1) do
-        writeReward iteration rewards'
+        writeReward iteration step rewards'
 
     let keys    = head infos
     !states' <- if T.any dones 

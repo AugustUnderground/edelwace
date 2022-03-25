@@ -268,6 +268,8 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
+    writeReward iteration step rewards
+
     let keys   = head infos
     !states' <- if T.any dones 
                    then flip processGace keys <$> resetPool' envUrl dones
