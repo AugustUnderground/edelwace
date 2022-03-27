@@ -201,7 +201,7 @@ evaluate Agent{..} s εN = do
     z' <- D.sample n []
     let a  = T.tanh (μ + σ * ε)
         l1 = D.logProb n z'
-        l2 = T.log $ 1.0 - T.pow (2.0 :: Float) a + εN
+        l2 = T.log . T.abs $ 1.0 - T.pow (2.0 :: Float) a + εN
         p  = T.sumDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
     pure (a,p)
   where

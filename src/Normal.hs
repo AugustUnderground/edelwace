@@ -26,7 +26,7 @@ data Normal = Normal {  -- | mean of the distribution (often referred to as mu)
 instance D.Distribution Normal where
   batchShape d = T.shape . loc $ d
   eventShape _ = []
-  expand d s   = Normal {loc = loc', scale = scale'}
+  expand d s   = Normal { loc = loc', scale = scale'}
     where
       loc'     = T.expand (loc d)   True s
       scale'   = T.expand (scale d) True s
@@ -42,19 +42,18 @@ instance D.Distribution Normal where
       dt   = T.dtype  $ loc d
       opts = T.withDType dt . T.withDevice dv $ T.defaultOpts
   logProb d x  = T.log $ prob d x
-  entropy d    = 0.5 * T.log (e * 2.0 * pi' * T.pow (2.0 :: Float) sigma)
+  entropy d    = 0.5 * T.log (2.0 * pi' * T.pow (2.0 :: Float) sigma) + 0.5
     where
       dv       = T.device $ loc d
       dt       = T.dtype  $ loc d
       opts     = T.withDType dt . T.withDevice dv $ T.defaultOpts
-      e        = T.exp $ T.ones [1] opts
       pi'      = T.asTensor' (pi :: Float) opts
       sigma    = scale d
   enumerateSupport = undefined
 
 -- | PDF for given Normal Distribution
 prob :: Normal -> T.Tensor -> T.Tensor
-prob d x = (1.0 / (mu * T.sqrt (2.0 * pi')))
+prob d x = (1.0 / (sigma * T.sqrt (2.0 * pi')))
          * T.exp ((- 0.5) * T.pow (2.0 :: Float) ((x - mu) / sigma))
   where
     mu    = loc d
