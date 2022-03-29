@@ -122,5 +122,5 @@ args = Args <$> strOption ( long "algorithm"
                          <> short 'R'
                          <> metavar "PORT" 
                          <> showDefault 
-                         <> value "5000"
+                         <> value "6008"
                          <> help "MLFlow tracking server port" )
