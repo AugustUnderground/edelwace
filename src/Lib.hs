@@ -492,22 +492,23 @@ newExperiment' Tracker{..} expName = do
     pure (Tracker uri expId' expName M.empty)
 
 ---- | Create a new run with a set of given paramters
-newRuns :: Tracker -> [String] -> M.Map String String -> IO Tracker
+newRuns :: Tracker -> [String] -> [MLF.Param] -> IO Tracker
 newRuns Tracker{..} ids params' = do
     unless (M.null runIds) do
         forM_ (M.elems runIds) (MLF.endRun uri)
         putStrLn "Ended runs before starting new ones."
     runIds' <- M.fromList . zip ids <$> replicateM (length ids) 
                  (MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId [])
-    forM_ (M.elems runIds') (\rid -> MLF.logBatch' uri rid 0 M.empty params')
+    forM_ (zip (M.elems runIds') params') 
+          (\(rid,p') -> MLF.logBatch uri rid [] [p'] [])
     pure (Tracker uri experimentId experimentName runIds')
 
 ---- | New run with algorithm id and #envs as log params
-newRuns' :: String -> Int -> Tracker -> IO Tracker
-newRuns' algorithm numEnvs tracker = newRuns tracker ids params'
+newRuns' :: Int -> Tracker -> IO Tracker
+newRuns' numEnvs tracker = newRuns tracker ids params'
   where
-    ids     = "loss" : map (("env_" ++) . show) [0 .. (numEnvs - 1)]
-    params' = M.fromList [("algorithm", algorithm), ("num_envs", show numEnvs)]
+    ids     = ["reward", "loss"] ++ map (("env_" ++) . show) [0 .. (numEnvs - 1)]
+    params' = map (MLF.Param "env_id" . show) [0 .. (numEnvs - 1)]
 
 ---- | End a run
 endRun :: String -> Tracker -> IO Tracker
@@ -539,11 +540,13 @@ filterPerformance :: M.Map Int (M.Map String Float) -> [String]
                   -> M.Map Int (M.Map String Float)
 filterPerformance performance keys = M.map keyFilter performance
   where
-    keyFilter = M.filterWithKey (\k _ -> k `elem` keys)
+    keyFilter m = M.fromList $ [ (map sanatizeJSON k, fromJust $ M.lookup k m ) 
+                               | k <- M.keys m, k `elem` keys ]
+    --keyFilter = M.filterWithKey (\k _ -> k `elem` keys)
 
 ---- | Write Current state of the Environment to Trackign Server
 trackEnvState :: Tracker -> HymURL -> Int -> IO ()
-trackEnvState Tracker{..} url step = do
+trackEnvState tracker@Tracker{..} url step = do
     performance'    <- hymPoolMap url performanceRoute 
     sizing          <- hymPoolMap url sizingRoute 
     actions         <- filterPerformance performance' . head . M.elems 
@@ -552,18 +555,15 @@ trackEnvState Tracker{..} url step = do
     let targetKeys  = M.keys . head . M.elems $ target'
         performance = filterPerformance performance' targetKeys
         target      = M.map (M.mapKeys (++ "_target")) target'
-        states      = M.fromList $ map (\id' -> 
-                            let envId = "env_" ++ show envId
-                                state = M.unions 
-                                      $ map ( M.mapKeys (map sanatizeJSON) 
-                                            . fromJust . M.lookup id' )
-                                            [target, performance, sizing, actions]
-                            in (envId, state))
-                          (M.keys performance)
-    forM_ (M.keys states) 
-          (\runId' -> 
-              let state' = fromJust $ M.lookup runId' states
-               in MLF.logBatch' uri runId' step state' M.empty)
+
+    forM_ (M.keys target)
+          (\id' -> 
+              let envId  = "env_" ++ show id'
+                  state  = M.unions 
+                         $ map (fromJust . M.lookup id')
+                               [target, performance, sizing, actions]
+                  runId' = runId tracker envId
+               in MLF.logBatch' uri runId' step state M.empty)
   where
     performanceRoute = "current_performance"
     sizingRoute      = "current_sizing"
