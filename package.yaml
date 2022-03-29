@@ -27,6 +27,7 @@ dependencies:
 - lens
 - wreq
 - bytestring
+- time
 - aeson
 - containers
 - directory

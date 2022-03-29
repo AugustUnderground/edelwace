@@ -53,6 +53,7 @@ library
     , mtl
     , numeric-limits
     , optparse-applicative
+    , time
     , wreq
   default-language: Haskell2010
 
@@ -75,6 +76,7 @@ executable edelwace-exe
     , mtl
     , numeric-limits
     , optparse-applicative
+    , time
     , wreq
   default-language: Haskell2010
 
@@ -100,5 +102,6 @@ test-suite edelwace-test
     , mtl
     , numeric-limits
     , optparse-applicative
+    , time
     , wreq
   default-language: Haskell2010
