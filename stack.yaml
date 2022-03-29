@@ -17,7 +17,7 @@ extra-deps:
       - libtorch-ffi
       - libtorch-ffi-helper
   - git: https://github.com/AugustUnderground/mlflow-hs.git
-    commit: 0605c0bb051184cc6b625ee3685fe91f56ba8303
+    commit: 55c529fe25ddea7ffd391b04651050862d3a4596
 
 extra-include-dirs:
   - libtorch/include/torch/csrc/api/include
