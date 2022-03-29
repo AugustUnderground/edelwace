@@ -497,18 +497,20 @@ newRuns Tracker{..} ids params' = do
     unless (M.null runIds) do
         forM_ (M.elems runIds) (MLF.endRun uri)
         putStrLn "Ended runs before starting new ones."
-    runIds' <- M.fromList . zip ids <$> replicateM (length ids) 
+    runIds' <- replicateM (length ids) 
                  (MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId [])
-    forM_ (zip (M.elems runIds') params') 
-          (\(rid,p') -> MLF.logBatch uri rid [] [p'] [])
-    pure (Tracker uri experimentId experimentName runIds')
+    forM_ (zip runIds' params') (\(rid, p') -> MLF.logBatch uri rid [] [p'] [])
+    let runs = M.fromList $ zip ids runIds'
+    pure (Tracker uri experimentId experimentName runs)
 
 ---- | New run with algorithm id and #envs as log params
 newRuns' :: Int -> Tracker -> IO Tracker
 newRuns' numEnvs tracker = newRuns tracker ids params'
   where
-    ids     = ["reward", "loss"] ++ map (("env_" ++) . show) [0 .. (numEnvs - 1)]
-    params' = map (MLF.Param "env_id" . show) [0 .. (numEnvs - 1)]
+    ids     = map (("env_" ++) . show) [0 .. (numEnvs - 1)] 
+           ++ ["reward", "loss"]
+    params' = map (MLF.Param "id" . show) [0 .. (numEnvs - 1)] 
+           ++ [MLF.Param "id" "rewards", MLF.Param "id" "losses"]
 
 ---- | End a run
 endRun :: String -> Tracker -> IO Tracker
@@ -527,10 +529,20 @@ trackLoss tracker@Tracker{..} epoch ident loss =
 
 ---- | Write Reward to Tracking Server
 trackReward :: Tracker -> Int -> T.Tensor -> IO ()
-trackReward tracker@Tracker{..} step reward = forM_ (zip envIds rewards) 
-        (\(envId, rewardValue) -> 
-            let runId' = runId tracker envId
-             in MLF.logMetric uri runId' "reward" rewardValue step)
+trackReward tracker@Tracker{..} step reward = do
+        let rewId = runId tracker "reward"
+            rAvg  = T.asValue (T.mean reward) :: Float
+            rSum  = T.asValue (T.sumAll reward) :: Float
+            rMin  = T.asValue (T.min reward) :: Float
+            rMax  = T.asValue (T.max reward) :: Float
+        _ <- MLF.logMetric uri rewId "sum" rSum step
+        _ <- MLF.logMetric uri rewId "avg" rAvg step
+        _ <- MLF.logMetric uri rewId "max" rMax step
+        _ <- MLF.logMetric uri rewId "min" rMin step
+        forM_ (zip envIds rewards) 
+            (\(envId, rewardValue) -> 
+                let runId' = runId tracker envId
+                 in MLF.logMetric uri runId' "reward" rewardValue step)
   where
     rewards = T.asValue (T.squeezeAll reward) :: [Float]
     envIds  = [ "env_" ++ show e | e <- [0 .. (length rewards - 1) ]]

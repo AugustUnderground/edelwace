@@ -252,20 +252,21 @@ updateStep agent MemoryLoader{..} = do
   where
     (entropies, logProbs, values) 
              = act actionSpace agent loaderStates loaderActions
-    rewards  = scaleRewards loaderReturns rewardScale
     ratios   = T.exp $ logProbs - loaderLogPorbs
     surr1    = ratios * loaderAdvantages
     surr2    = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
     πLoss    = T.mean . fst . T.minDim (T.Dim 1) T.KeepDim
              $ T.cat (T.Dim 1) [surr1, surr2]
-    qLoss    = T.mseLoss values rewards
+    --rewards  = scaleRewards loaderReturns rewardScale
+    --qLoss    = T.mseLoss values rewards
+    qLoss    = T.mseLoss values loaderReturns
     loss     = T.mean $ (- πLoss) + 0.5 * qLoss - δ * entropies
  
 -- | Run Policy Update
 updatePolicy :: Int -> Int -> Agent -> Tracker -> MemoryLoader [T.Tensor] 
              -> T.Tensor -> IO Agent
 updatePolicy iteration epoch agent tracker (MemoryLoader [] [] [] [] []) loss = do
-    _ <- trackLoss tracker (iteration * numSteps + (numEpochs - epoch)) 
+    _ <- trackLoss tracker (iteration * numSteps + epoch) 
                    "policy" (T.asValue loss :: Float)
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
