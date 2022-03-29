@@ -43,6 +43,17 @@ packages:
     subdir: libtorch-ffi-helper
     git: https://github.com/hasktorch/hasktorch.git
     commit: 5f97cd3fa1647092de85e4675aebdc3da1967098
+- completed:
+    name: mlflow-hs
+    version: 0.1.0.0
+    git: https://github.com/AugustUnderground/mlflow-hs.git
+    pantry-tree:
+      size: 1533
+      sha256: d2819184c47cdedd932572497db1009460234350906d769c9f2ad605aa852151
+    commit: 0605c0bb051184cc6b625ee3685fe91f56ba8303
+  original:
+    git: https://github.com/AugustUnderground/mlflow-hs.git
+    commit: 0605c0bb051184cc6b625ee3685fe91f56ba8303
 snapshots:
 - completed:
     size: 587113

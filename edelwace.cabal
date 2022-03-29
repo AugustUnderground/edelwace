@@ -49,6 +49,7 @@ library
     , hasktorch
     , lens
     , libtorch-ffi
+    , mlflow-hs
     , mtl
     , numeric-limits
     , optparse-applicative
@@ -70,6 +71,7 @@ executable edelwace-exe
     , hasktorch
     , lens
     , libtorch-ffi
+    , mlflow-hs
     , mtl
     , numeric-limits
     , optparse-applicative
@@ -94,6 +96,7 @@ test-suite edelwace-test
     , hasktorch
     , lens
     , libtorch-ffi
+    , mlflow-hs
     , mtl
     , numeric-limits
     , optparse-applicative
