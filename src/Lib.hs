@@ -481,6 +481,9 @@ newExperiment' Tracker{..} expName = do
 -- | Create a new run with a set of given paramters
 newRun :: Tracker -> M.Map String String -> IO Tracker
 newRun Tracker{..} params' = do
+    unless (null runId) do
+        _ <- MLF.endRun uri runId
+        putStrLn $ "Ended run " ++ runId ++ " before starting new one."
     runId' <- MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId []
     _      <- MLF.logBatch' uri runId' 0 M.empty params'
     pure (Tracker uri experimentId experimentName runId')
@@ -491,6 +494,12 @@ newRun' algorithm numEnvs tracker = newRun tracker params'
   where
     params' = M.fromList [ ("algorithm", algorithm), ("num_envs", show numEnvs) ]
 
+-- | End a run
+endRun :: Tracker -> IO Tracker
+endRun Tracker{..} = do
+    _ <- MLF.endRun uri runId
+    pure (Tracker uri experimentId experimentName "")
+
 -- | Write Loss to Tracking Server
 trackLoss :: Tracker -> Int -> String -> Float 
             -> IO (Response BL.ByteString)
@@ -499,10 +508,9 @@ trackLoss Tracker{..} epoch ident loss = MLF.logMetric uri runId ident loss epoc
 -- | Write Reward to Tracking Server
 trackReward :: Tracker -> Int -> T.Tensor -> IO (Response BL.ByteString)
 trackReward Tracker{..} step reward = MLF.logBatch' uri runId step rMap M.empty
-    -- forM_ logData (\(s, e, r) -> MLF.logMetric uri runId e r s)
   where
     rewards = T.asValue (T.squeezeAll reward) :: [Float]
-    envs    = [ "env_" ++ show e | e <- [0 .. (length rewards - 1) ]]
+    envs    = [ "reward_" ++ show e | e <- [0 .. (length rewards - 1) ]]
     rMap    = M.fromList $ zip envs rewards
 
 -- | Filter Performance of all envs
