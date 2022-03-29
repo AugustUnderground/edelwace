@@ -354,7 +354,7 @@ train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRuns' algorithm numEnvs
+    tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
