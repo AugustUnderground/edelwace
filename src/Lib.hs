@@ -12,16 +12,17 @@
 -- | Utility and Helper functions for EDELWACE
 module Lib where
 
-import Data.Char        (isLower)
-import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
-import Data.Maybe       (fromJust)
+import Data.Char             (isLower)
+import Data.List             (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
+import Data.Maybe            (fromJust)
 import Data.Aeson
 import Network.Wreq
 import Control.Lens
 import Control.Monad
 import GHC.Generics
-import GHC.Float        (float2Double)
-import Numeric.Limits   (maxValue, minValue)
+import GHC.Float             (float2Double)
+import Numeric.Limits        (maxValue, minValue)
+import Data.Time.Clock.POSIX (getPOSIXTime)
 -- import System.Directory
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
@@ -30,8 +31,8 @@ import qualified Data.ByteString           as BS hiding (pack)
 import qualified Torch                     as T
 import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
-import qualified Torch.Functional.Internal as T (where', nan_to_num)
-import qualified Torch.Initializers        as T (xavierNormal)
+import qualified Torch.Functional.Internal as T         (where', nan_to_num)
+import qualified Torch.Initializers        as T         (xavierNormal)
 import qualified MLFlow                    as MLF
 import qualified MLFlow.DataStructures     as MLF
 
@@ -442,85 +443,105 @@ scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor')
     factor' = toTensor factor
  
 ------------------------------------------------------------------------------
--- Data Logging
+-- Data Logging / Visualization
 ------------------------------------------------------------------------------
 
+-- | Sanatize JSON for MLFlow: Names may only contain alphanumerics,
+-- underscores (_), dashes (-), periods (.), spaces ( ), and slashes (/).
+sanatizeJSON :: Char -> Char
+sanatizeJSON ':' = '_'  -- Replace Colons
+sanatizeJSON ';' = '_'  -- Replace Semicolons
+sanatizeJSON ',' = '_'  -- Replace Commas
+sanatizeJSON  c  =  c   -- Leave as is
+
 -- | Data Logging to MLFlow Trackign Server
-data Tracker = Tracker { uri            :: MLF.TrackingURI  -- ^ Tracking Server URI
-                       , experimentId   :: MLF.ExperimentID -- ^ Experiment ID
-                       , experimentName :: String           -- ^ Experiment Name
-                       , runId          :: MLF.RunID        -- ^ Run ID
+data Tracker = Tracker { uri            :: MLF.TrackingURI        -- ^ Tracking Server URI
+                       , experimentId   :: MLF.ExperimentID       -- ^ Experiment ID
+                       , experimentName :: String                 -- ^ Experiment Name
+                       , runIds         :: M.Map String MLF.RunID -- ^ Run IDs
                        } deriving (Show)
+
+-- | Retrieve a run ID
+runId :: Tracker -> String -> MLF.RunID
+runId Tracker{..} id' = fromJust $ M.lookup id' runIds
 
 -- | Make new Tracker given a Tracking Server URI
 mkTracker :: MLF.TrackingURI -> String -> IO Tracker
 mkTracker uri' expName = do
-    suffix <- (T.asValue <$> randomInts 100000 999999 1) :: IO Int
+    suffix <- (round . (* 1000) <$> getPOSIXTime :: IO Int)
     let expName' = expName ++ "_" ++ show suffix
     expId' <- MLF.createExperiment uri' expName'
-    pure (Tracker uri' expId' expName' "")
+    pure (Tracker uri' expId' expName' M.empty)
 
 -- | Make new Tracker given a Hostname and Port
 mkTracker' :: String -> Int -> String -> IO Tracker
 mkTracker' host port = mkTracker (MLF.trackingURI' host port)
 
--- | Create a new Experiment with rng suffix
+---- | Create a new Experiment with rng suffix
 newExperiment :: Tracker -> String -> IO Tracker
 newExperiment Tracker{..} expName = do
-    suffix <- (T.asValue <$> randomInts 100000 999999 1) :: IO Int
+    suffix <- (round . (* 1000) <$> getPOSIXTime :: IO Int)
     let expName' = expName ++ "_" ++ show suffix
     expId' <- MLF.createExperiment uri expName'
-    pure (Tracker uri expId' expName' "")
+    pure (Tracker uri expId' expName' M.empty)
 
--- | Create a new Experiment
+---- | Create a new Experiment
 newExperiment' :: Tracker -> String -> IO Tracker
 newExperiment' Tracker{..} expName = do
     expId' <- MLF.createExperiment uri expName
-    pure (Tracker uri expId' expName "")
+    pure (Tracker uri expId' expName M.empty)
 
--- | Create a new run with a set of given paramters
-newRun :: Tracker -> M.Map String String -> IO Tracker
-newRun Tracker{..} params' = do
-    unless (null runId) do
-        _ <- MLF.endRun uri runId
-        putStrLn $ "Ended run " ++ runId ++ " before starting new one."
-    runId' <- MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId []
-    _      <- MLF.logBatch' uri runId' 0 M.empty params'
-    pure (Tracker uri experimentId experimentName runId')
+---- | Create a new run with a set of given paramters
+newRuns :: Tracker -> [String] -> M.Map String String -> IO Tracker
+newRuns Tracker{..} ids params' = do
+    unless (M.null runIds) do
+        forM_ (M.elems runIds) (MLF.endRun uri)
+        putStrLn "Ended runs before starting new ones."
+    runIds' <- M.fromList . zip ids <$> replicateM (length ids) 
+                 (MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId [])
+    forM_ (M.elems runIds') (\rid -> MLF.logBatch' uri rid 0 M.empty params')
+    pure (Tracker uri experimentId experimentName runIds')
 
--- | New run with algorithm id and #envs as log params
-newRun' :: String -> Int -> Tracker -> IO Tracker
-newRun' algorithm numEnvs tracker = newRun tracker params'
+---- | New run with algorithm id and #envs as log params
+newRuns' :: String -> Int -> Tracker -> IO Tracker
+newRuns' algorithm numEnvs tracker = newRuns tracker ids params'
   where
-    params' = M.fromList [ ("algorithm", algorithm), ("num_envs", show numEnvs) ]
+    ids     = "loss" : map (("env_" ++) . show) [0 .. (numEnvs - 1)]
+    params' = M.fromList [("algorithm", algorithm), ("num_envs", show numEnvs)]
 
--- | End a run
-endRun :: Tracker -> IO Tracker
-endRun Tracker{..} = do
-    _ <- MLF.endRun uri runId
-    pure (Tracker uri experimentId experimentName "")
+---- | End a run
+endRun :: String -> Tracker -> IO Tracker
+endRun id' tracker@Tracker{..} = do
+    _ <- MLF.endRun uri (runId tracker id')
+    pure (Tracker uri experimentId experimentName runIds')
+  where 
+    runIds' = M.delete id' runIds
 
--- | Write Loss to Tracking Server
-trackLoss :: Tracker -> Int -> String -> Float 
-            -> IO (Response BL.ByteString)
-trackLoss Tracker{..} epoch ident loss = MLF.logMetric uri runId ident loss epoch
+---- | Write Loss to Tracking Server
+trackLoss :: Tracker -> Int -> String -> Float -> IO (Response BL.ByteString)
+trackLoss tracker@Tracker{..} epoch ident loss = 
+    MLF.logMetric uri runId' ident loss epoch
+  where
+    runId' = runId tracker "loss" 
 
--- | Write Reward to Tracking Server
-trackReward :: Tracker -> Int -> T.Tensor -> IO (Response BL.ByteString)
-trackReward Tracker{..} step reward = MLF.logBatch' uri runId step rMap M.empty
+---- | Write Reward to Tracking Server
+trackReward :: Tracker -> Int -> T.Tensor -> IO ()
+trackReward tracker@Tracker{..} step reward = forM_ (zip envIds rewards) 
+        (\(envId, rewardValue) -> 
+            let runId' = runId tracker envId
+             in MLF.logMetric uri runId' "reward" rewardValue step)
   where
     rewards = T.asValue (T.squeezeAll reward) :: [Float]
-    envs    = [ "reward_" ++ show e | e <- [0 .. (length rewards - 1) ]]
-    rMap    = M.fromList $ zip envs rewards
+    envIds  = [ "env_" ++ show e | e <- [0 .. (length rewards - 1) ]]
 
--- | Filter Performance of all envs
+---- | Filter Performance of all envs
 filterPerformance :: M.Map Int (M.Map String Float) -> [String] 
                   -> M.Map Int (M.Map String Float)
 filterPerformance performance keys = M.map keyFilter performance
   where
     keyFilter = M.filterWithKey (\k _ -> k `elem` keys)
 
--- | Write Current state of the Environment to Trackign Server
+---- | Write Current state of the Environment to Trackign Server
 trackEnvState :: Tracker -> HymURL -> Int -> IO ()
 trackEnvState Tracker{..} url step = do
     performance'    <- hymPoolMap url performanceRoute 
@@ -530,93 +551,21 @@ trackEnvState Tracker{..} url step = do
     target'         <- hymPoolMap url targetRoute
     let targetKeys  = M.keys . head . M.elems $ target'
         performance = filterPerformance performance' targetKeys
-        target      = M.map (M.mapKeys ("target_" ++)) target'
-        state       = map (\k -> foldl1 M.union $ map (fromJust . M.lookup k) 
-                                 [target, performance, sizing, actions])
+        target      = M.map (M.mapKeys (++ "_target")) target'
+        states      = M.fromList $ map (\id' -> 
+                            let envId = "env_" ++ show envId
+                                state = M.unions 
+                                      $ map ( M.mapKeys (map sanatizeJSON) 
+                                            . fromJust . M.lookup id' )
+                                            [target, performance, sizing, actions]
+                            in (envId, state))
                           (M.keys performance)
-    
-    forM_ state (\state' -> MLF.logBatch' uri runId step state' M.empty)
+    forM_ (M.keys states) 
+          (\runId' -> 
+              let state' = fromJust $ M.lookup runId' states
+               in MLF.logBatch' uri runId' step state' M.empty)
   where
     performanceRoute = "current_performance"
     sizingRoute      = "current_sizing"
     targetRoute      = "target"
     actionRoute      = "action_keys"
-
--- -- | Create a log directory
--- createLogDir :: FilePath -> IO ()
--- createLogDir = createDirectoryIfMissing True
--- 
--- -- | Setup the Logging Direcotry for SHACE
--- setupLogging :: FilePath -> IO ()
--- setupLogging remoteDir = do
---     localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
---     localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
--- 
---     BS.writeFile localLoss   "Iteration,Epoch,Model,Loss\n"
---     BS.writeFile localReward "Iteration,Step,Env,Reward\n"
--- 
---     createLogDir remoteDir
--- 
---     doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
---     doesFileExist remoteReward >>= flip when (removeFile remoteReward)
--- 
---     createFileLink localLoss   remoteLoss
---     createFileLink localReward remoteReward
---   where
---     remoteLoss   = remoteDir ++ "/loss.csv"
---     remoteReward = remoteDir ++ "/reward.csv"
--- 
--- -- | Get SHACE Logging path to a given URL
--- remoteLogPath :: HymURL -> IO FilePath
--- remoteLogPath url = (++ "/model") <$> shaceLogPath url
--- 
--- -- | Append a line to the given reward log file (w/o) episode
--- writeReward :: Int -> Int -> T.Tensor -> IO ()
--- writeReward iteration step rewards = forM_ (zip4 (repeat iteration) (repeat step) 
---                                                  env reward)
---                                            (\(i,s,e,r) -> BS.appendFile path 
---                                                       <$> BS.pack 
---                                                        $  show i ++ "," 
---                                                        ++ show s ++ "," 
---                                                        ++ show e ++ "," 
---                                                        ++ show r ++ "\n")
---   where
---     path   = "./log/reward.csv"
---     reward = T.asValue (T.squeezeAll rewards) :: [Float]
---     env    = [ 0 .. (length reward - 1) ]
--- 
--- -- | Append a line to the given loss log file (w/o) episode
--- writeLoss :: Int -> Int -> String -> Float -> IO ()
--- writeLoss iteration epoch model loss = BS.appendFile path line
---   where
---     path = "./log/loss.csv"
---     line = BS.pack $ show iteration ++ "," ++ show epoch ++ "," ++ model 
---                                     ++ "," ++ show loss ++ "\n"
--- 
--- -- | Obtain current performance from a gace server and write/append to log
--- writeEnvLog :: FilePath -> HymURL -> IO ()
--- writeEnvLog path aceUrl = do
---     performance <- M.map (M.map (: [])) <$> hymPoolMap aceUrl performanceRoute 
---     sizing <- M.map (M.map (: [])) <$> hymPoolMap aceUrl sizingRoute 
---     let envData = M.unionWith M.union performance sizing
---     fex <- doesFileExist jsonPath
---     logData' <- if fex then M.unionWith (M.unionWith (++)) envData 
---                                 . fromJust . decodeStrict 
---                                 <$> BS.readFile jsonPath
---                        else return envData
---     BL.writeFile jsonPath (encode logData')
---   where
---     performanceRoute = "current_performance"
---     sizingRoute      = "current_sizing"
---     jsonPath         = path ++ "/env.json"
--- 
--- -- | Write an arbitrary Map to a log file for visualization
--- writeLog :: FilePath -> M.Map String [Float] -> IO ()
--- writeLog path logData = do
---     fex <- doesFileExist path
---     logData' <- if fex then M.unionWith (++) logData . fromJust . decodeStrict
---                             <$> BS.readFile jsonPath
---                        else return logData
---     BL.writeFile jsonPath (encode logData')
---   where
---     jsonPath = path ++ "/log.json"
