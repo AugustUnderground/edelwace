@@ -9,6 +9,7 @@ import Lib hiding (info)
 import qualified SAC
 import qualified TD3
 import qualified PPO
+import qualified MLFlow as MLF
 
 import Control.Monad
 import Options.Applicative
@@ -18,28 +19,28 @@ run :: Args -> IO ()
 run Args{..} | algorithm `notElem` [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
                          = error $ "No such algorithm " ++ algorithm
              | otherwise = do
-    putStrLn $ "``'-.,_,.-'``'-.,_,.='``'-., Trainig " 
-              ++ algorithm ++ " ,.-'``'-.,_,.='``'-.,_,.='``"
+    putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
     when (algorithm == SAC.algorithm) do
-        SAC.train obs act url >>= SAC.saveAgent path
+        SAC.train obs act url uri >>= SAC.saveAgent path
  
     when (algorithm == TD3.algorithm) do
-        TD3.train obs act url >>= TD3.saveAgent path
+        TD3.train obs act url uri >>= TD3.saveAgent path
  
     when (algorithm == PPO.algorithm) do
-        PPO.train obs act url >>= PPO.saveAgent path
+        PPO.train obs act url uri >>= PPO.saveAgent path
 
-    putStrLn "``'-.,_,.-'``'-.,_,.='``'-., DONE ,.-'``'-.,_,.='``'-.,_,.='``"
+    putStrLn $ "Training " ++ algorithm ++ " Agent finished."
   where
-    url        = aceURL host port ace pdk var
+    url = aceURL host port ace pdk var
+    uri = MLF.trackingURI mlfHost mlfPort
 
 -- | Main
 main :: IO ()
 main = run =<< execParser opts
   where
     opts = info (args <**> helper) ( fullDesc <> progDesc "GACE RL Trainer" 
-                                              <> header "EDELWAC²E" )
+                                              <> header   "EDELWAC²E" )
 
 -- | Command Line Arguments
 data Args = Args { algorithm :: String
@@ -51,6 +52,8 @@ data Args = Args { algorithm :: String
                  , act       :: Int
                  , obs       :: Int
                  , path      :: String
+                 , mlfHost   :: String
+                 , mlfPort   :: String
                  } deriving (Show)
 
 -- | Command Line Argument Parser
@@ -101,7 +104,7 @@ args = Args <$> strOption ( long "algorithm"
                            <> short 'o'
                            <> metavar "OBSERVATIONS" 
                            <> showDefault 
-                           <> value 43
+                           <> value 39
                            <> help "Dimensions of Observation Space" )
             <*> strOption ( long "path" 
                          <> short 'f'
@@ -109,3 +112,15 @@ args = Args <$> strOption ( long "algorithm"
                          <> showDefault 
                          <> value "./models"
                          <> help "Checkpoint File Path" )
+            <*> strOption ( long "tracking-host" 
+                         <> short 'T'
+                         <> metavar "HOST" 
+                         <> showDefault 
+                         <> value "localhost"
+                         <> help "MLFlow tracking server host address" )
+            <*> strOption ( long "tracking-port" 
+                         <> short 'R'
+                         <> metavar "PORT" 
+                         <> showDefault 
+                         <> value "5000"
+                         <> help "MLFlow tracking server port" )
