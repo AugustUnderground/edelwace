@@ -24,6 +24,7 @@ module TD3 ( algorithm
 import Lib
 import RPB
 import TD3.Defaults
+import MLFlow       (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
@@ -190,9 +191,9 @@ addNoise t action = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Agent -> ReplayBuffer T.Tensor -> IO Agent
-updateStep _ 0 agent _ = pure agent
-updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
+updateStep :: Int -> Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> IO Agent
+updateStep _ 0 agent _ _ = pure agent
+updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
     ε <- normal μ' σ'
     let a' = π φ' s' + ε
     y <- T.detach $ r + γ * q' θ1' θ2' s' a'
@@ -205,8 +206,10 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
-    writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
+    -- writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
+    -- writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
+    _ <- trackLoss tracker epoch "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker epoch "Q2" (T.asValue jQ2 :: Float)
 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
@@ -215,7 +218,8 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
         updateActor = do
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            writeLoss iteration epoch "A" (T.asValue jφ :: Float)
+            -- writeLoss iteration epoch "A" (T.asValue jφ :: Float)
+            _ <- trackLoss tracker epoch "Q2" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
@@ -239,7 +243,7 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     let agent' = Agent φOnline' φTarget' θ1Online' θ2Online' θ1Target' θ2Target' 
                        φOptim'           θ1Optim'  θ2Optim'
 
-    updateStep iteration epoch' agent' buffer
+    updateStep iteration epoch' agent' tracker buffer
   where
     μ'     = T.zerosLike rpbActions
     σ'     = T.onesLike μ' * σ
@@ -250,16 +254,16 @@ updateStep iteration epoch Agent{..} buffer@ReplayBuffer{..} = do
     s'     = rpbStates'
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Agent -> ReplayBuffer T.Tensor -> Int -> IO Agent
-updatePolicy iteration agent buffer epochs = do
+updatePolicy :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int -> IO Agent
+updatePolicy iteration agent tracker buffer epochs = do
     memories <- bufferRandomSample batchSize buffer
-    updateStep iteration epochs agent memories
+    updateStep iteration epochs agent tracker memories
 
 -- | Evaluate Policy
-evaluatePolicy :: Int -> Int -> Agent -> HymURL -> T.Tensor 
+evaluatePolicy :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
                -> ReplayBuffer T.Tensor -> IO (ReplayBuffer T.Tensor, T.Tensor)
-evaluatePolicy _ 0 _ _ states buffer = pure (buffer, states)
-evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
+evaluatePolicy _ 0 _ _ _ states buffer = pure (buffer, states)
+evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
 
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
@@ -268,7 +272,8 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    writeReward iteration (numSteps - step) rewards
+    -- writeReward iteration (numSteps - step) rewards
+    _ <- trackReward tracker iteration rewards
 
     let keys   = head infos
     !states' <- if T.any dones 
@@ -285,27 +290,27 @@ evaluatePolicy iteration step agent@Agent{..} envUrl states buffer = do
         putStrLn $ "\tEnvironments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t\t" ++ show de
 
-    evaluatePolicy iteration step' agent envUrl states' buffer'
+    evaluatePolicy iteration step' agent envUrl tracker states' buffer'
   where
     step'   = step - 1
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training
-runAlgorithm :: Int -> Agent -> HymURL -> Bool -> ReplayBuffer T.Tensor
+runAlgorithm :: Int -> Agent -> HymURL -> Tracker -> Bool -> ReplayBuffer T.Tensor
              -> T.Tensor -> IO Agent
-runAlgorithm _ agent _ True _ _ = pure agent
-runAlgorithm iteration agent envUrl _ buffer states = do
+runAlgorithm _ agent _ _ True _ _ = pure agent
+runAlgorithm iteration agent envUrl tracker _ buffer states = do
 
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
     (!memories', !states') <- evaluatePolicy iteration numSteps agent envUrl 
-                                             states buffer
+                                             tracker states buffer
 
     let buffer' = bufferPush' bufferSize buffer memories'
 
     !agent' <- if bufferLength buffer' < batchSize 
                   then pure agent
-                  else updatePolicy iteration agent buffer' numEpochs
+                  else updatePolicy iteration agent tracker buffer' numEpochs
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -314,15 +319,17 @@ runAlgorithm iteration agent envUrl _ buffer states = do
         stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
         done'      = (iteration >= numIterations) || stop
 
-    runAlgorithm iteration' agent' envUrl done' buffer' states'
+    runAlgorithm iteration' agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
-train :: Int -> Int -> HymURL -> IO Agent
-train obsDim actDim envUrl = do
-    remoteLogPath envUrl >>= setupLogging 
+train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
+train obsDim actDim envUrl trackingUri = do
+    -- remoteLogPath envUrl >>= setupLogging 
+    numEnvs <- numEnvsPool envUrl
+    tracker <- mkTracker trackingUri algorithm >>= newRun' algorithm numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
@@ -331,7 +338,7 @@ train obsDim actDim envUrl = do
         buffer  = mkBuffer
 
     !agent <- mkAgent obsDim actDim >>= 
-        (\agent' -> runAlgorithm 0 agent' envUrl False buffer states)
+        (\agent' -> runAlgorithm 0 agent' envUrl tracker False buffer states)
 
     saveAgent ptPath agent 
 

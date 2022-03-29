@@ -23,6 +23,7 @@ import Lib
 import RPB
 import PPO.Defaults
 import qualified Normal                           as D
+import MLFlow                 (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
@@ -261,36 +262,38 @@ updateStep agent MemoryLoader{..} = do
     loss     = T.mean $ (- πLoss) + 0.5 * qLoss - δ * entropies
  
 -- | Run Policy Update
-updatePolicy :: Int -> Int -> Agent -> MemoryLoader [T.Tensor] -> T.Tensor 
-             -> IO Agent
-updatePolicy iteration epoch agent (MemoryLoader [] [] [] [] []) loss = do
-    writeLoss iteration epoch "L" (T.asValue loss :: Float)
+updatePolicy :: Int -> Int -> Agent -> Tracker -> MemoryLoader [T.Tensor] 
+             -> T.Tensor -> IO Agent
+updatePolicy iteration epoch agent tracker (MemoryLoader [] [] [] [] []) loss = do
+    -- writeLoss iteration epoch "L" (T.asValue loss :: Float)
+    _ <- trackLoss tracker iteration "alpha" (T.asValue loss :: Float)
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
     pure agent
-updatePolicy iteration epoch agent loader _ = do
+updatePolicy iteration epoch agent tracker loader _ = do
     (agent', loss') <- updateStep agent batch
-    updatePolicy iteration epoch agent' loader' loss'
+    updatePolicy iteration epoch agent' tracker loader' loss'
   where
     batch   = head <$> loader
     loader' = tail <$> loader
 
 -- | Evaluation Step
-evaluateStep :: Int -> Int -> Agent -> HymURL -> T.Tensor 
+evaluateStep :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
              -> ReplayMemory T.Tensor -> IO (ReplayMemory T.Tensor, T.Tensor)
-evaluateStep _ 0 _ _ states mem = do
+evaluateStep _ 0 _ _ _ states mem = do
     when verbose do
         let tot = T.sumAll . memRewards $ mem
         putStrLn $ "\tStep " ++ show numSteps ++ "\tTotal Reward:\t" ++ show tot
     pure (mem, states)
-evaluateStep iteration step agent envUrl states mem = do
+evaluateStep iteration step agent envUrl tracker states mem = do
     (actions', logProbs', values')         <- act' actionSpace agent states
 
     (!states'', !rewards', !dones, !infos) <- if actionSpace == Discrete
                                                  then stepPool' envUrl actions'
                                                  else stepPool  envUrl actions'
 
-    writeReward iteration (numSteps - step) rewards'
+    -- writeReward iteration (numSteps - step) rewards'
+    _ <- trackReward tracker iteration rewards'
 
     when (verbose && step `mod` 10 == 0) do
         let men = T.mean rewards'
@@ -305,32 +308,32 @@ evaluateStep iteration step agent envUrl states mem = do
     let masks' = T.logicalNot dones
         mem'   = memoryPush mem states' actions' logProbs' rewards' values' masks'
 
-    evaluateStep iteration step' agent envUrl states' mem'
+    evaluateStep iteration step' agent envUrl tracker states' mem'
   where
     step' = step - 1
 
 -- | Evaluate Current Policy
-evaluatePolicy :: Int -> Agent -> HymURL -> T.Tensor 
+evaluatePolicy :: Int -> Agent -> HymURL -> Tracker -> T.Tensor 
                -> IO (ReplayMemory T.Tensor, T.Tensor)
-evaluatePolicy iteration agent envUrl states = do
-    evaluateStep iteration numSteps agent envUrl states mem
+evaluatePolicy iteration agent envUrl tracker states = do
+    evaluateStep iteration numSteps agent envUrl tracker states mem
   where
     mem = mkMemory
 
 -- | Run Proximal Porlicy Optimization Training
-runAlgorithm :: Int -> Agent -> HymURL -> Bool -> T.Tensor -> IO Agent
-runAlgorithm _ agent _ True _ = pure agent
-runAlgorithm iteration agent envUrl _ states = do
+runAlgorithm :: Int -> Agent -> HymURL -> Tracker -> Bool -> T.Tensor -> IO Agent
+runAlgorithm _ agent _ _ True _ = pure agent
+runAlgorithm iteration agent envUrl tracker _ states = do
 
     when verbose do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
     
-    (!mem', !states') <- evaluatePolicy iteration agent envUrl states
+    (!mem', !states') <- evaluatePolicy iteration agent envUrl tracker states
 
     let !loader = dataLoader mem' batchSize γ τ
 
     agent' <- T.foldLoop agent numEpochs 
-                    (\gnt epc -> updatePolicy iteration epc gnt loader emptyTensor)
+                (\gnt epc -> updatePolicy iteration epc gnt tracker loader emptyTensor)
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -339,15 +342,17 @@ runAlgorithm iteration agent envUrl _ states = do
         stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
         done'      = (iteration >= numIterations) || stop
 
-    runAlgorithm iteration' agent' envUrl done' states'
+    runAlgorithm iteration' agent' envUrl tracker done' states'
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
 
 -- | Train Proximal Policy Optimization Agent on Environment
-train :: Int -> Int -> HymURL -> IO Agent
-train obsDim actDim envUrl = do
-    remoteLogPath envUrl >>= setupLogging 
+train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
+train obsDim actDim envUrl trackingUri = do
+    -- remoteLogPath envUrl >>= setupLogging 
+    numEnvs <- numEnvsPool envUrl
+    tracker <- mkTracker trackingUri algorithm >>= newRun' algorithm numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
@@ -355,7 +360,7 @@ train obsDim actDim envUrl = do
     let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= 
-        (\agent' -> runAlgorithm 0 agent' envUrl False states )
+        (\agent' -> runAlgorithm 0 agent' envUrl tracker False states )
 
     saveAgent ptPath agent 
     pure agent
