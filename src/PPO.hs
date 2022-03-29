@@ -265,8 +265,8 @@ updateStep agent MemoryLoader{..} = do
 updatePolicy :: Int -> Int -> Agent -> Tracker -> MemoryLoader [T.Tensor] 
              -> T.Tensor -> IO Agent
 updatePolicy iteration epoch agent tracker (MemoryLoader [] [] [] [] []) loss = do
-    -- writeLoss iteration epoch "L" (T.asValue loss :: Float)
-    _ <- trackLoss tracker iteration "alpha" (T.asValue loss :: Float)
+    _ <- trackLoss tracker (iteration * numSteps + (numEpochs - epoch)) 
+                   "policy" (T.asValue loss :: Float)
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
     pure agent
@@ -292,7 +292,6 @@ evaluateStep iteration step agent envUrl tracker states mem = do
                                                  then stepPool' envUrl actions'
                                                  else stepPool  envUrl actions'
 
-    -- writeReward iteration (numSteps - step) rewards'
     _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards'
     when (step `mod` 8 == 0) do
         _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
@@ -355,7 +354,7 @@ train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRun' algorithm numEnvs
+    tracker <- mkTracker trackingUri algorithm >>= newRuns' algorithm numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl

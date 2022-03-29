@@ -246,10 +246,8 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
-    -- writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
-    -- writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
-    _ <- trackLoss tracker epoch "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker epoch "Q2" (T.asValue jQ2 :: Float)
+    _ <- trackLoss tracker iteration "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker iteration "Q2" (T.asValue jQ2 :: Float)
 
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
@@ -260,8 +258,7 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
-            -- writeLoss iteration epoch "A" (T.asValue jα :: Float)
-            _ <- trackLoss tracker epoch "alpha" (T.asValue jα :: Float)
+            _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
         updateActor :: IO(ActorNet, T.Adam)
         updateActor = do
@@ -269,8 +266,7 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
-            -- writeLoss iteration epoch "P" (T.asValue jπ :: Float)
-            _ <- trackLoss tracker epoch "policy" (T.asValue jπ :: Float)
+            _ <- trackLoss tracker iteration  "policy" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
         syncCritic :: IO (CriticNet, CriticNet)
         syncCritic = do
@@ -348,10 +344,8 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
-    -- writeLoss iteration epoch "Q1" (T.asValue jQ1 :: Float)
-    -- writeLoss iteration epoch "Q2" (T.asValue jQ2 :: Float)
-    _ <- trackLoss tracker epoch "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker epoch "Q2" (T.asValue jQ2 :: Float)
+    _ <- trackLoss tracker iteration "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker iteration "Q2" (T.asValue jQ2 :: Float)
 
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
@@ -362,7 +356,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             -- writeLoss iteration epoch "A" (T.asValue jα :: Float)
-            _ <- trackLoss tracker epoch "alpha" (T.asValue jα :: Float)
+            _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
         updateActor :: IO(ActorNet, T.Adam)
         updateActor = do
@@ -371,7 +365,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
             -- writeLoss iteration epoch "P" (T.asValue jπ :: Float)
-            _ <- trackLoss tracker epoch "alpha" (T.asValue jπ :: Float)
+            _ <- trackLoss tracker iteration "alpha" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
         syncCritic :: IO (CriticNet, CriticNet)
         syncCritic = do
@@ -418,7 +412,6 @@ evaluateStep iteration _ agent envUrl tracker states = do
     actions <- act agent states
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    -- writeReward iteration (numSteps - step) rewards
     _ <- trackReward tracker iteration rewards
  
     when (verbose && T.any dones) do
@@ -540,7 +533,7 @@ train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRun' algorithm numEnvs
+    tracker <- mkTracker trackingUri algorithm >>= newRuns' algorithm numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
