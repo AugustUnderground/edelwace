@@ -10,8 +10,11 @@ Reinforcement Learning Algorithms for
 LibTorch is required, as per HaskTorch Documentation, and must be symlinked
 into this directory. Then source `setenv` in your shell.
 
-For training [Hym](https://github.com/AugustUnderground/hym) must be up
+For training, [Hym](https://github.com/AugustUnderground/hym) must be up
 and running.
+
+For tracking, [mlflow](https://www.mlflow.org) and
+[mlflow-hs](https://github.com/AugustUnderground/mlfow-hs) must be installed.
 
 ```bash
 $ source setenv
@@ -36,6 +39,7 @@ $ stack exec -- edelwace-exe [options]
 Usage: edelwace-exe [-l|--algorithm ALGORITHM] [-H|--host HOST] [-P|--port PORT]
                     [-i|--ace ID] [-p|--pdk PDK] [-v|--var VARIANT]
                     [-a|--act ACTIONS] [-o|--obs OBSERVATIONS] [-f|--path FILE]
+                    [-T|--tracking-host HOST] [-R|--tracking-port PORT]
   GACE RL Trainer
 
 Available options:
@@ -46,8 +50,11 @@ Available options:
   -p,--pdk PDK             ACE Backend (default: "xh035")
   -v,--var VARIANT         GACE Environment Variant (default: "0")
   -a,--act ACTIONS         Dimensions of Action Space (default: 10)
-  -o,--obs OBSERVATIONS    Dimensions of Observation Space (default: 42)
+  -o,--obs OBSERVATIONS    Dimensions of Observation Space (default: 39)
   -f,--path FILE           Checkpoint File Path (default: "./models")
+  -T,--tracking-host HOST  MLFlow tracking server host address
+                           (default: "localhost")
+  -R,--tracking-port PORT  MLFlow tracking server port (default: "5000")
   -h,--help                Show this help text
 ```
 
@@ -105,3 +112,4 @@ spaces.
 - [ ] Remove strictness where unecessary
 - [X] Add agent loading ability
 - [X] Command Line Options
+- [X] MLFlow tracking
