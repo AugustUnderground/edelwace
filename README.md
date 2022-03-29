@@ -66,6 +66,7 @@ Available options:
 - wreq
 - aeson
 - optparse-applicative
+- mlflow-hs
 
 ## Algorithms
 
