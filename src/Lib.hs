@@ -13,7 +13,7 @@
 module Lib where
 
 import Data.Char        (isLower)
-import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex, zip4)
+import Data.List        (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
 import Data.Maybe       (fromJust)
 import Data.Aeson
 import Network.Wreq
@@ -22,16 +22,18 @@ import Control.Monad
 import GHC.Generics
 import GHC.Float        (float2Double)
 import Numeric.Limits   (maxValue, minValue)
-import System.Directory
+-- import System.Directory
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString           as BS hiding (pack)
-import qualified Data.ByteString.Char8     as BS (pack)
+-- import qualified Data.ByteString.Char8     as BS (pack)
 import qualified Torch                     as T
 import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
 import qualified Torch.Functional.Internal as T (where', nan_to_num)
 import qualified Torch.Initializers        as T (xavierNormal)
+import qualified MLFlow                    as MLF
+import qualified MLFlow.DataStructures     as MLF
 
 ------------------------------------------------------------------------------
 -- Convenience / Syntactic Sugar
@@ -248,7 +250,6 @@ stepsToTuple steps = (obs, rew, don, inf)
     opts = T.withDType T.Bool . T.withDevice gpu $ T.defaultOpts
     obs  =                    toTensor . M.elems . M.map observation      $ steps
     rew  = T.reshape [-1,1] . toTensor . M.elems . M.map reward           $ steps
-    --don  = T.reshape [-1,1] . toTensor . M.elems . M.map done        $ steps
     don  = T.reshape [-1,1] . (`T.asTensor'` opts) . M.elems . M.map done $ steps
     inf  =                               M.elems . M.map info             $ steps
 
@@ -265,9 +266,13 @@ hymPost url route payload = BL.toStrict . (^. responseBody)
 hymPoolMap :: HymURL -> String -> IO (M.Map Int (M.Map String Float))
 hymPoolMap url route = fromJust . decodeStrict <$> hymGet url route
 
--- | Convert a JSON Response from an ACE Server to a List
+-- | Convert a JSON Response from an ACE Server to a Float-List
 hymPoolList :: HymURL -> String -> IO (M.Map Int [Float])
 hymPoolList url route = fromJust . decodeStrict <$> hymGet url route
+
+-- | Convert a JSON Response from an ACE Server to a String-List
+hymPoolList' :: HymURL -> String -> IO (M.Map Int [String])
+hymPoolList' url route = fromJust . decodeStrict <$> hymGet url route
 
 -- | Reset Pooled Environments on a Hym server
 hymPoolReset :: HymURL -> IO (M.Map Int [Float])
@@ -440,85 +445,170 @@ scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor')
 -- Data Logging
 ------------------------------------------------------------------------------
 
--- | Create a log directory
-createLogDir :: FilePath -> IO ()
-createLogDir = createDirectoryIfMissing True
+-- | Data Logging to MLFlow Trackign Server
+data Tracker = Tracker { uri            :: MLF.TrackingURI  -- ^ Tracking Server URI
+                       , experimentId   :: MLF.ExperimentID -- ^ Experiment ID
+                       , experimentName :: String           -- ^ Experiment Name
+                       , runId          :: MLF.RunID        -- ^ Run ID
+                       } deriving (Show)
 
--- | Setup the Logging Direcotry for SHACE
-setupLogging :: FilePath -> IO ()
-setupLogging remoteDir = do
-    localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
-    localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
+-- | Make new Tracker given a Tracking Server URI
+mkTracker :: MLF.TrackingURI -> String -> IO Tracker
+mkTracker uri' expName = do
+    suffix <- (T.asValue <$> randomInts 100000 999999 1) :: IO Int
+    let expName' = expName ++ "_" ++ show suffix
+    expId' <- MLF.createExperiment uri' expName'
+    pure (Tracker uri' expId' expName' "")
 
-    BS.writeFile localLoss   "Iteration,Epoch,Model,Loss\n"
-    BS.writeFile localReward "Iteration,Step,Env,Reward\n"
+-- | Make new Tracker given a Hostname and Port
+mkTracker' :: String -> Int -> String -> IO Tracker
+mkTracker' host port = mkTracker (MLF.trackingURI' host port)
 
-    createLogDir remoteDir
+-- | Create a new Experiment with rng suffix
+newExperiment :: Tracker -> String -> IO Tracker
+newExperiment Tracker{..} expName = do
+    suffix <- (T.asValue <$> randomInts 100000 999999 1) :: IO Int
+    let expName' = expName ++ "_" ++ show suffix
+    expId' <- MLF.createExperiment uri expName'
+    pure (Tracker uri expId' expName' "")
 
-    doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
-    doesFileExist remoteReward >>= flip when (removeFile remoteReward)
+-- | Create a new Experiment
+newExperiment' :: Tracker -> String -> IO Tracker
+newExperiment' Tracker{..} expName = do
+    expId' <- MLF.createExperiment uri expName
+    pure (Tracker uri expId' expName "")
 
-    createFileLink localLoss   remoteLoss
-    createFileLink localReward remoteReward
+-- | Create a new run with a set of given paramters
+newRun :: Tracker -> M.Map String String -> IO Tracker
+newRun Tracker{..} params' = do
+    runId' <- MLF.runId . MLF.runInfo <$> MLF.createRun uri experimentId []
+    _      <- MLF.logBatch' uri runId' 0 M.empty params'
+    pure (Tracker uri experimentId experimentName runId')
+
+-- | New run with algorithm id and #envs as log params
+newRun' :: String -> Int -> Tracker -> IO Tracker
+newRun' algorithm numEnvs tracker = newRun tracker params'
   where
-    remoteLoss   = remoteDir ++ "/loss.csv"
-    remoteReward = remoteDir ++ "/reward.csv"
+    params' = M.fromList [ ("algorithm", algorithm), ("num_envs", show numEnvs) ]
 
--- | Get SHACE Logging path to a given URL
-remoteLogPath :: HymURL -> IO FilePath
-remoteLogPath url = (++ "/model") <$> shaceLogPath url
+-- | Write Loss to Tracking Server
+trackLoss :: Tracker -> Int -> String -> Float 
+            -> IO (Response BL.ByteString)
+trackLoss Tracker{..} epoch ident loss = MLF.logMetric uri runId ident loss epoch
 
--- | Append a line to the given loss log file (w/o) episode
-writeLoss :: Int -> Int -> String -> Float -> IO ()
-writeLoss iteration epoch model loss = BS.appendFile path line
+-- | Write Reward to Tracking Server
+trackReward :: Tracker -> Int -> T.Tensor -> IO (Response BL.ByteString)
+trackReward Tracker{..} step reward = MLF.logBatch' uri runId step rMap M.empty
+    -- forM_ logData (\(s, e, r) -> MLF.logMetric uri runId e r s)
   where
-    path = "./log/loss.csv"
-    line = BS.pack $ show iteration ++ "," ++ show epoch ++ "," ++ model 
-                                    ++ "," ++ show loss ++ "\n"
+    rewards = T.asValue (T.squeezeAll reward) :: [Float]
+    envs    = [ "env_" ++ show e | e <- [0 .. (length rewards - 1) ]]
+    rMap    = M.fromList $ zip envs rewards
 
--- | Append a line to the given reward log file (w/o) episode
-writeReward :: Int -> Int -> T.Tensor -> IO ()
-writeReward iteration step rewards = forM_ (zip4 (repeat iteration) (repeat step) 
-                                                 env reward)
-                                           (\(i,s,e,r) -> BS.appendFile path 
-                                                      <$> BS.pack 
-                                                       $  show i ++ "," 
-                                                       ++ show s ++ "," 
-                                                       ++ show e ++ "," 
-                                                       ++ show r ++ "\n")
+-- | Filter Performance of all envs
+filterPerformance :: M.Map Int (M.Map String Float) -> [String] 
+                  -> M.Map Int (M.Map String Float)
+filterPerformance performance keys = M.map keyFilter performance
   where
-    path   = "./log/reward.csv"
-    reward = T.asValue (T.squeezeAll rewards) :: [Float]
-    env    = [ 0 .. (length reward - 1) ]
+    keyFilter = M.filterWithKey (\k _ -> k `elem` keys)
 
--- | Obtain current performance from a gace server and write/append to log
-writeEnvLog :: FilePath -> HymURL -> IO ()
-writeEnvLog path aceUrl = do
-    performance <- M.map (M.map (: [])) <$> hymPoolMap aceUrl performanceRoute 
-    sizing <- M.map (M.map (: [])) <$> hymPoolMap aceUrl sizingRoute 
-    let envData = M.unionWith M.union performance sizing
-    fex <- doesFileExist jsonPath
-    logData' <- if fex then M.unionWith (M.unionWith (++)) envData 
-                                . fromJust . decodeStrict 
-                                <$> BS.readFile jsonPath
-                       else return envData
-    BL.writeFile jsonPath (encode logData')
+-- | Write Current state of the Environment to Trackign Server
+trackEnvState :: Tracker -> HymURL -> Int -> IO ()
+trackEnvState Tracker{..} url step = do
+    performance'    <- hymPoolMap url performanceRoute 
+    sizing          <- hymPoolMap url sizingRoute 
+    actions         <- filterPerformance performance' . head . M.elems 
+                    <$> hymPoolList' url actionRoute
+    target'         <- hymPoolMap url targetRoute
+    let targetKeys  = M.keys . head . M.elems $ target'
+        performance = filterPerformance performance' targetKeys
+        target      = M.map (M.mapKeys ("target_" ++)) target'
+        state       = map (\k -> foldl1 M.union $ map (fromJust . M.lookup k) 
+                                 [target, performance, sizing, actions])
+                          (M.keys performance)
+    
+    forM_ state (\state' -> MLF.logBatch' uri runId step state' M.empty)
   where
     performanceRoute = "current_performance"
     sizingRoute      = "current_sizing"
-    jsonPath         = path ++ "/env.json"
+    targetRoute      = "target"
+    actionRoute      = "action_keys"
 
--- | Write an arbitrary Map to a log file for visualization
-writeLog :: FilePath -> M.Map String [Float] -> IO ()
-writeLog path logData = do
-    fex <- doesFileExist path
-    logData' <- if fex then M.unionWith (++) logData . fromJust . decodeStrict
-                            <$> BS.readFile jsonPath
-                       else return logData
-    BL.writeFile jsonPath (encode logData')
-  where
-    jsonPath = path ++ "/log.json"
-
-------------------------------------------------------------------------------
--- Data Visualization
-------------------------------------------------------------------------------
+-- -- | Create a log directory
+-- createLogDir :: FilePath -> IO ()
+-- createLogDir = createDirectoryIfMissing True
+-- 
+-- -- | Setup the Logging Direcotry for SHACE
+-- setupLogging :: FilePath -> IO ()
+-- setupLogging remoteDir = do
+--     localLoss   <- (++ "/log/loss.csv")   <$> getCurrentDirectory
+--     localReward <- (++ "/log/reward.csv") <$> getCurrentDirectory
+-- 
+--     BS.writeFile localLoss   "Iteration,Epoch,Model,Loss\n"
+--     BS.writeFile localReward "Iteration,Step,Env,Reward\n"
+-- 
+--     createLogDir remoteDir
+-- 
+--     doesFileExist remoteLoss   >>= flip when (removeFile remoteLoss)
+--     doesFileExist remoteReward >>= flip when (removeFile remoteReward)
+-- 
+--     createFileLink localLoss   remoteLoss
+--     createFileLink localReward remoteReward
+--   where
+--     remoteLoss   = remoteDir ++ "/loss.csv"
+--     remoteReward = remoteDir ++ "/reward.csv"
+-- 
+-- -- | Get SHACE Logging path to a given URL
+-- remoteLogPath :: HymURL -> IO FilePath
+-- remoteLogPath url = (++ "/model") <$> shaceLogPath url
+-- 
+-- -- | Append a line to the given reward log file (w/o) episode
+-- writeReward :: Int -> Int -> T.Tensor -> IO ()
+-- writeReward iteration step rewards = forM_ (zip4 (repeat iteration) (repeat step) 
+--                                                  env reward)
+--                                            (\(i,s,e,r) -> BS.appendFile path 
+--                                                       <$> BS.pack 
+--                                                        $  show i ++ "," 
+--                                                        ++ show s ++ "," 
+--                                                        ++ show e ++ "," 
+--                                                        ++ show r ++ "\n")
+--   where
+--     path   = "./log/reward.csv"
+--     reward = T.asValue (T.squeezeAll rewards) :: [Float]
+--     env    = [ 0 .. (length reward - 1) ]
+-- 
+-- -- | Append a line to the given loss log file (w/o) episode
+-- writeLoss :: Int -> Int -> String -> Float -> IO ()
+-- writeLoss iteration epoch model loss = BS.appendFile path line
+--   where
+--     path = "./log/loss.csv"
+--     line = BS.pack $ show iteration ++ "," ++ show epoch ++ "," ++ model 
+--                                     ++ "," ++ show loss ++ "\n"
+-- 
+-- -- | Obtain current performance from a gace server and write/append to log
+-- writeEnvLog :: FilePath -> HymURL -> IO ()
+-- writeEnvLog path aceUrl = do
+--     performance <- M.map (M.map (: [])) <$> hymPoolMap aceUrl performanceRoute 
+--     sizing <- M.map (M.map (: [])) <$> hymPoolMap aceUrl sizingRoute 
+--     let envData = M.unionWith M.union performance sizing
+--     fex <- doesFileExist jsonPath
+--     logData' <- if fex then M.unionWith (M.unionWith (++)) envData 
+--                                 . fromJust . decodeStrict 
+--                                 <$> BS.readFile jsonPath
+--                        else return envData
+--     BL.writeFile jsonPath (encode logData')
+--   where
+--     performanceRoute = "current_performance"
+--     sizingRoute      = "current_sizing"
+--     jsonPath         = path ++ "/env.json"
+-- 
+-- -- | Write an arbitrary Map to a log file for visualization
+-- writeLog :: FilePath -> M.Map String [Float] -> IO ()
+-- writeLog path logData = do
+--     fex <- doesFileExist path
+--     logData' <- if fex then M.unionWith (++) logData . fromJust . decodeStrict
+--                             <$> BS.readFile jsonPath
+--                        else return logData
+--     BL.writeFile jsonPath (encode logData')
+--   where
+--     jsonPath = path ++ "/log.json"
