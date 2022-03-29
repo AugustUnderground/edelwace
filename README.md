@@ -14,7 +14,7 @@ For training, [Hym](https://github.com/AugustUnderground/hym) must be up
 and running.
 
 For tracking, [mlflow](https://www.mlflow.org) and
-[mlflow-hs](https://github.com/AugustUnderground/mlfow-hs) must be installed.
+[mlflow-hs](https://github.com/AugustUnderground/mlflow-hs) must be installed.
 
 ```bash
 $ source setenv
