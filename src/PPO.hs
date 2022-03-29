@@ -293,7 +293,10 @@ evaluateStep iteration step agent envUrl tracker states mem = do
                                                  else stepPool  envUrl actions'
 
     -- writeReward iteration (numSteps - step) rewards'
-    _ <- trackReward tracker iteration rewards'
+    _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards'
+    when (step `mod` 8 == 0) do
+        _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
+        pure ()
 
     when (verbose && step `mod` 10 == 0) do
         let men = T.mean rewards'
