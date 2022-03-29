@@ -147,8 +147,11 @@ hymPost :: HymURL -> String -> Value -> IO ByteString
 -- | Convert a JSON Response from an ACE Server to a Map
 hymPoolMap :: HymURL -> String -> IO (Map Int (Map String Float))
 
--- | Convert a JSON Response from an ACE Server to a List
+-- | Convert a JSON Response from an ACE Server to a Float-List
 hymPoolList :: HymURL -> String -> IO (Map Int [Float])
+
+-- | Convert a JSON Response from an ACE Server to a String-List
+hymPoolList' :: HymURL -> String -> IO (Map Int [String])
 
 -- | Reset Pooled Environments on a Hym server
 hymPoolReset :: HymURL -> IO (Map Int [Float])
@@ -232,32 +235,58 @@ processGace :: Tensor -> Info -> Tensor
 -- | Scale reward to center
 scaleRewards :: Tensor -> Float -> Tensor
 
--- | Create a log directory
-createLogDir :: FilePath -> IO ()
+-- | Data Logging to MLFlow Trackign Server
+data Tracker
+Tracker :: TrackingURI -> ExperimentID -> String -> RunID -> Tracker
 
--- | Setup the Logging Direcotry for SHACE
-setupLogging :: FilePath -> IO ()
+-- | Tracking Server URI
+[uri] :: Tracker -> TrackingURI
 
--- | Get SHACE Logging path to a given URL
-remoteLogPath :: HymURL -> IO FilePath
+-- | Experiment ID
+[experimentId] :: Tracker -> ExperimentID
 
--- | Append a line to the given loss log file (w/o) episode
-writeLoss :: Int -> String -> Float -> IO ()
+-- | Experiment Name
+[experimentName] :: Tracker -> String
 
--- | Append a line to the given reward log file (w/o) episode
-writeReward :: Int -> Int -> Tensor -> IO ()
+-- | Run ID
+[runId] :: Tracker -> RunID
 
--- | Obtain current performance from a gace server and write/append to log
-writeEnvLog :: FilePath -> HymURL -> IO ()
+-- | Make new Tracker given a Tracking Server URI
+mkTracker :: TrackingURI -> String -> IO Tracker
 
--- | Write an arbitrary Map to a log file for visualization
-writeLog :: FilePath -> Map String [Float] -> IO ()
+-- | Make new Tracker given a Hostname and Port
+mkTracker' :: String -> Int -> String -> IO Tracker
+
+-- | Create a new Experiment with rng suffix
+newExperiment :: Tracker -> String -> IO Tracker
+
+-- | Create a new Experiment
+newExperiment' :: Tracker -> String -> IO Tracker
+
+-- | Create a new run with a set of given paramters
+newRun :: Tracker -> Map String String -> IO Tracker
+
+-- | New run with algorithm id and #envs as log params
+newRun' :: String -> Int -> Tracker -> IO Tracker
+
+-- | Write Loss to Tracking Server
+trackLoss :: Tracker -> Int -> String -> Float -> IO (Response ByteString)
+
+-- | Write Reward to Tracking Server
+trackReward :: Tracker -> Int -> Tensor -> IO (Response ByteString)
+
+-- | Filter Performance of all envs
+filterPerformance :: Map Int (Map String Float) -> [String] -> Map Int (Map String Float)
+
+-- | Write Current state of the Environment to Trackign Server
+trackEnvState :: Tracker -> HymURL -> Int -> IO ()
 instance GHC.Show.Show Lib.Info
 instance GHC.Generics.Generic Lib.Info
 instance GHC.Show.Show Lib.Step
 instance GHC.Generics.Generic Lib.Step
 instance GHC.Classes.Eq Lib.ActionSpace
 instance GHC.Show.Show Lib.ActionSpace
+instance GHC.Show.Show Lib.Tracker
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Step
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Step
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Info
@@ -567,7 +596,7 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 q :: CriticNet -> Tensor -> Tensor
 
 -- | Train Proximal Policy Optimization Agent on Environment
-train :: Int -> Int -> HymURL -> IO Agent
+train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 instance GHC.Classes.Eq PPO.ActorNetSpec
 instance GHC.Show.Show PPO.ActorNetSpec
 instance GHC.Classes.Eq PPO.CriticNetSpec
@@ -755,7 +784,7 @@ act :: Agent -> Tensor -> IO Tensor
 evaluate :: Agent -> Tensor -> Tensor -> IO (Tensor, Tensor)
 
 -- | Train Soft Actor Critic Agent on Environment
-train :: Int -> Int -> HymURL -> IO Agent
+train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 instance GHC.Classes.Eq SAC.ActorNetSpec
 instance GHC.Show.Show SAC.ActorNetSpec
 instance GHC.Classes.Eq SAC.CriticNetSpec
@@ -917,7 +946,7 @@ addNoise :: Int -> Tensor -> IO Tensor
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on
 --   Environment
-train :: Int -> Int -> HymURL -> IO Agent
+train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 instance GHC.Classes.Eq TD3.ActorNetSpec
 instance GHC.Show.Show TD3.ActorNetSpec
 instance GHC.Classes.Eq TD3.CriticNetSpec
