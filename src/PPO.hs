@@ -257,9 +257,9 @@ updateStep agent MemoryLoader{..} = do
     surr2    = loaderAdvantages * T.clamp (1.0 - ε) (1.0 + ε) ratios
     πLoss    = T.mean . fst . T.minDim (T.Dim 1) T.KeepDim
              $ T.cat (T.Dim 1) [surr1, surr2]
-    --rewards  = scaleRewards loaderReturns rewardScale
-    --qLoss    = T.mseLoss values rewards
-    qLoss    = T.mseLoss values loaderReturns
+    rewards  = scaleRewards loaderReturns rewardScale
+    qLoss    = T.mseLoss values rewards
+    --qLoss    = T.mseLoss values loaderReturns
     loss     = T.mean $ (- πLoss) + 0.5 * qLoss - δ * entropies
  
 -- | Run Policy Update

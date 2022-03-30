@@ -28,13 +28,13 @@ numEpochs :: Int
 numEpochs     = 16
 -- | Number of iterations
 numIterations :: Int
-numIterations = round (1.0e6 :: Float)
+numIterations = 200 -- round (1.0e6 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
 -- | Size of the batches during epoch
 batchSize :: Int
-batchSize     = 128
+batchSize     = 32
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
