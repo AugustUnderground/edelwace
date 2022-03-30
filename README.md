@@ -1,8 +1,8 @@
 # EDELWAC²E
 
-Reinforcement Learning Algorithms for
-[GAC²E](https://github.com/AugustUnderground/gace) via
-[Hym](https://github.com/AugustUnderground/hym) in Haskell with
+Reinforcement Learning Agents for
+[GAC²E](https://github.com/AugustUnderground/gace) through
+[Hym](https://github.com/AugustUnderground/hym) with
 [HaskTorch](https://github.com/hasktorch/hasktorch).
 
 ## Setup
@@ -70,33 +70,46 @@ Available options:
 
 ## Algorithms
 
-[Haddock](https://augustunderground.github.io/edelwace/)
+[Haddock](https://augustunderground.github.io/edelwace/) is availbale.
 
 **Caution:** Excessive use of Unicode and Strictness.
 
 ### Soft Actor Critic (SAC)
 
-Soft Actor Critic (SAC) Agent for continuous action space.
-
 [Arxiv](https://arxiv.org/abs/1812.05905v2)
+
+Soft Actor Critic (SAC) Agent for continuous action space. Start with `-l sac`
+and `-v 0` for continuous electrical design space.
 
 ### Twin Delayed Deep Deterministic Policy Gradient (TD3)
 
-Twin Delayed Deep Deterministic Policy Gradient (TD3) Agent for continuous
-action space.
-
 [Arxiv](https://arxiv.org/abs/1802.09477)
+
+Twin Delayed Deep Deterministic Policy Gradient (TD3) Agent for continuous
+action space. Start with `-l td3` and `-v 0` for continuous electrical design
+space.
 
 ### Proximal Policy Optimization (PPO)
 
-Proximal Policy Optimization (PPO) Agent for discrete and continuous action
-spaces.
-
 [Arxiv](https://arxiv.org/abs/1707.06347)
+
+Proximal Policy Optimization (PPO) Agent for discrete and continuous action
+spaces. Start with `-l ppo` and `-v 2` for discrete electrical design space.
 
 ### Prioritized Experience Replay (PER)
 
 [Arxiv](https://arxiv.org/abs/1511.05952)
+
+Only implemented in SAC and deactivated for the moment. To quote ERE Paper:
+
+> We show that SAC+PER can marginally improve the sample efficiency performance
+> of SAC, but much less so than SAC+ERE. 
+
+### Emphasizing Recent Experience (ERE)
+
+[Arxiv](https://arxiv.org/abs/1906.04009)
+
+...
 
 ## Results
 
@@ -108,7 +121,9 @@ spaces.
 - [X] Implement TD3
 - [X] Implement PPO
 - [X] Implement PER
-- [ ] Visualization
+- [ ] Implement ERE
+- [ ] Implement IQN Critic
+- [ ] Visualization (MLFlow?)
 - [ ] Wait for Normal Distribution in HaskTorch
 - [ ] Remove strictness where unecessary
 - [X] Add agent loading ability
