@@ -122,7 +122,7 @@ Only implemented in SAC and deactivated for the moment. To quote ERE Paper:
 - [X] Implement PPO
 - [X] Implement PER
 - [ ] Implement ERE
-- [ ] Implement IQN Critic
+- [ ] Implement HER
 - [ ] Visualization (MLFlow?)
 - [ ] Wait for Normal Distribution in HaskTorch
 - [ ] Remove strictness where unecessary
