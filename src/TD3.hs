@@ -216,7 +216,6 @@ updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
         updateActor = do
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            -- writeLoss iteration epoch "A" (T.asValue jφ :: Float)
             _ <- trackLoss tracker iteration "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
@@ -324,7 +323,6 @@ runAlgorithm iteration agent envUrl tracker _ buffer states = do
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
-    -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
 

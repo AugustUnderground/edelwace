@@ -266,7 +266,7 @@ updateStep agent MemoryLoader{..} = do
 updatePolicy :: Int -> Int -> Agent -> Tracker -> MemoryLoader [T.Tensor] 
              -> T.Tensor -> IO Agent
 updatePolicy iteration epoch agent tracker (MemoryLoader [] [] [] [] []) loss = do
-    _ <- trackLoss tracker (iteration * numSteps + epoch) 
+    _ <- trackLoss tracker (iteration * numEpochs + epoch) 
                    "policy" (T.asValue loss :: Float)
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch ++ " Loss:\t" ++ show loss
@@ -353,7 +353,6 @@ runAlgorithm iteration agent envUrl tracker _ states = do
 -- | Train Proximal Policy Optimization Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
-    -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
 

@@ -355,7 +355,6 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
-            -- writeLoss iteration epoch "A" (T.asValue jα :: Float)
             _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
         updateActor :: IO(ActorNet, T.Adam)
@@ -364,7 +363,6 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
-            -- writeLoss iteration epoch "P" (T.asValue jπ :: Float)
             _ <- trackLoss tracker iteration "alpha" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ
         syncCritic :: IO (CriticNet, CriticNet)
@@ -531,7 +529,6 @@ train' _ _ _ _ _ = undefined
 -- | Train Soft Actor Critic Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
-    -- remoteLogPath envUrl >>= setupLogging 
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
 
