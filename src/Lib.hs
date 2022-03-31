@@ -406,18 +406,20 @@ boolMask len idx = mask
 processGace :: T.Tensor -> Info -> T.Tensor
 processGace obs Info {..} = states
   where
-    ok      = filter (\k -> ( (k `elem` actions) 
-                           || (isLower . head $ k)
-                           || (k == "A") )
-                         && not ("steps" `isInfixOf` k) 
-                         && not ("vn_" `isPrefixOf` k)
-                         && not ("v_" `isPrefixOf` k)
-                         && ("iss" /= k) && ("idd" /= k)
+    ok      = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
+                                                 || (k == "A") )
+                         && not ("steps" `isInfixOf`  k) 
+                         && not ("vn_"   `isPrefixOf` k)
+                         && not ("v_"    `isPrefixOf` k)
+                         &&     ("iss"      /=        k) 
+                         &&     ("idd"      /=        k)
                      ) observations
     idx     = T.toDType T.Int32 . toTensor 
             $ map (fromJust . flip elemIndex observations) ok
     idxI    = map (fromJust . flip elemIndex ok) 
-            $ filter (\i -> ("i_" `isInfixOf` i) || (":id" `isSuffixOf` i)) ok
+            $ filter (\i -> ("i_" `isInfixOf` i) 
+                         || (":id" `isSuffixOf` i) 
+                     ) ok
     mskI    = boolMask (length ok) idxI
     frqs    = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
     idxF    = map (fromJust . flip elemIndex ok) 
@@ -507,10 +509,10 @@ newRuns Tracker{..} ids params' = do
 newRuns' :: Int -> Tracker -> IO Tracker
 newRuns' numEnvs tracker = newRuns tracker ids params'
   where
-    ids     = map (("env_" ++) . show) [0 .. (numEnvs - 1)] 
-           ++ ["reward", "loss"]
-    params' = map (MLF.Param "id" . show) [0 .. (numEnvs - 1)] 
-           ++ [MLF.Param "id" "rewards", MLF.Param "id" "losses"]
+    ids     = "model" 
+            : map (("env_" ++) . show) [0 .. (numEnvs - 1)] 
+    params' = MLF.Param "id" "model" 
+            : map (MLF.Param "id" . show) [0 .. (numEnvs - 1)] 
 
 ---- | End a run
 endRun :: String -> Tracker -> IO Tracker
@@ -525,16 +527,11 @@ trackLoss :: Tracker -> Int -> String -> Float -> IO (Response BL.ByteString)
 trackLoss tracker@Tracker{..} epoch ident loss = 
     MLF.logMetric uri runId' ident loss epoch
   where
-    runId' = runId tracker "loss" 
+    runId' = runId tracker "model" 
 
 ---- | Write Reward to Tracking Server
 trackReward :: Tracker -> Int -> T.Tensor -> IO ()
 trackReward tracker@Tracker{..} step reward = do
-        let rewId = runId tracker "reward"
-            rAvg  = T.asValue (T.mean reward) :: Float
-            rSum  = T.asValue (T.sumAll reward) :: Float
-            rMin  = T.asValue (T.min reward) :: Float
-            rMax  = T.asValue (T.max reward) :: Float
         _ <- MLF.logMetric uri rewId "sum" rSum step
         _ <- MLF.logMetric uri rewId "avg" rAvg step
         _ <- MLF.logMetric uri rewId "max" rMax step
@@ -546,6 +543,11 @@ trackReward tracker@Tracker{..} step reward = do
   where
     rewards = T.asValue (T.squeezeAll reward) :: [Float]
     envIds  = [ "env_" ++ show e | e <- [0 .. (length rewards - 1) ]]
+    rewId   = runId tracker "model"
+    rAvg    = T.asValue (T.mean reward) :: Float
+    rSum    = T.asValue (T.sumAll reward) :: Float
+    rMin    = T.asValue (T.min reward) :: Float
+    rMax    = T.asValue (T.max reward) :: Float
 
 ---- | Filter Performance of all envs
 filterPerformance :: M.Map Int (M.Map String Float) -> [String] 
