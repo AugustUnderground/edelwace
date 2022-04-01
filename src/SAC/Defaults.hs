@@ -20,7 +20,7 @@ verbose :: Bool
 verbose       = True
 -- | Replay Buffer Type
 bufferType :: Buffer
-bufferType    = RPB
+bufferType    = ERE
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1
@@ -131,3 +131,17 @@ bufferSize = round (5.0e6 :: Float)
 -- | Weight Exponent Delay
 βFrames ::  Int
 βFrames    = round (1.0e5 :: Float)
+
+------------------------------------------------------------------------------
+-- Emphasizing Recent Experience Settings
+------------------------------------------------------------------------------
+
+-- | Initial η
+η0 :: Float
+η0 = 0.996
+-- | Final η
+ηT :: Float
+ηT = 1.0
+-- | Minimum Sampling Range
+cMin :: Int
+cMin = 5000

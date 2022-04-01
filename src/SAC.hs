@@ -398,10 +398,28 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     --r    = scaleRewards rewards ρ
 
 -- | Perform Policy Update Steps (RPB)
-updatePolicyRPB :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int -> IO Agent
+updatePolicyRPB :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int 
+                -> IO Agent
 updatePolicyRPB iteration agent tracker buffer epochs =
     bufferRandomSample batchSize buffer >>= 
         updateStepRPB iteration epochs agent tracker
+
+-- | Sample for ERE Buffer and perform one update step
+updateStepERE :: Int -> Int -> Tracker -> ReplayBuffer T.Tensor -> Float -> Agent
+              -> IO Agent
+updateStepERE iteration epoch tracker buffer ηt agent | epoch >= numEpochs = pure agent
+                                                      | otherwise = do
+       ereSample buffer bufferSize batchSize numEpochs epoch cMin ηt >>= 
+        updateStepRPB iteration epoch agent tracker >>=
+            updateStepERE iteration epoch' tracker buffer ηt
+  where
+    epoch' = epoch + 1
+
+updatePolicyERE :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int -> IO Agent
+updatePolicyERE iteration agent tracker buffer _ =
+        updateStepERE iteration 0 tracker buffer ηt agent
+  where
+    ηt = ereAnneal η0 ηT numIterations iteration
 
 -- | Buffer independent exploration step in the environment
 evaluateStep :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
@@ -503,7 +521,7 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
 
     !agent' <- if bufLen < batchSize 
                   then pure agent
-                  else updatePolicyRPB iteration agent tracker buffer' numEpochs
+                  else update iteration agent tracker buffer' numEpochs
     
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -516,6 +534,9 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
+    update     = if bufferType ==  RPB 
+                    then updatePolicyRPB
+                    else updatePolicyERE
 
 -- | Handle training for different replay buffer types
 train' :: HymURL -> Tracker -> Buffer -> T.Tensor -> Agent -> IO Agent
@@ -524,6 +545,9 @@ train' envUrl tracker PER states agent = do
     runAlgorithmPER 0 agent envUrl tracker False buffer states
 train' envUrl tracker RPB states agent = 
     runAlgorithmRPB 0 agent envUrl tracker False mkBuffer states 
+train' envUrl tracker ERE states agent = 
+    runAlgorithmRPB 0 agent envUrl tracker False mkBuffer states 
+-- train' envUrl tracker PERERE states agent = undefined
 train' _ _ _ _ _ = undefined
 
 -- | Train Soft Actor Critic Agent on Environment
@@ -538,7 +562,6 @@ train obsDim actDim envUrl trackingUri = do
     let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
-
     createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker
