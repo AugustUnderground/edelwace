@@ -431,6 +431,12 @@ PER :: Buffer
 -- | PPO Style replay Memory
 MEM :: Buffer
 
+-- | Emphasizing Recent Experience
+ERE :: Buffer
+
+-- | PER + ERE
+PERERE :: Buffer
+
 -- | Strict Simple/Naive Replay Buffer
 data ReplayBuffer a
 ReplayBuffer :: !a -> !a -> !a -> !a -> !a -> ReplayBuffer a
@@ -467,6 +473,15 @@ bufferSample :: Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
 
 -- | Uniform random sample from Replay Buffer
 bufferRandomSample :: Int -> ReplayBuffer Tensor -> IO (ReplayBuffer Tensor)
+
+-- | Calculate ERE Sampling range cK
+ereSamplingRange :: Int -> Int -> Int -> Int -> Float -> Int
+
+-- | Sample for buffer within ERE range
+ereSample :: ReplayBuffer Tensor -> Int -> Int -> Int -> Int -> Int -> Float -> IO (ReplayBuffer Tensor)
+
+-- | ERE η Annealing during training
+ereAnneal :: Float -> Float -> Int -> Int -> Float
 
 -- | Strict Prioritized Experience Replay Buffer
 data PERBuffer a
@@ -569,6 +584,8 @@ dataLoader :: ReplayMemory Tensor -> Int -> Tensor -> Tensor -> MemoryLoader [Te
 
 -- | How many Trajectories are currently stored in memory
 loaderLength :: MemoryLoader [Tensor] -> Int
+instance GHC.Classes.Eq RPB.Buffer
+instance GHC.Show.Show RPB.Buffer
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.ReplayBuffer a)
 instance GHC.Show.Show a => GHC.Show.Show (RPB.ReplayBuffer a)
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.PERBuffer a)
@@ -739,6 +756,15 @@ bufferSize :: Int
 
 -- | Weight Exponent Delay
 βFrames :: Int
+
+-- | Initial η
+η0 :: Float
+
+-- | Final η
+ηT :: Float
+
+-- | Minimum Sampling Range
+cMin :: Int
 
 
 -- | Soft Actor Critic Algorithm Defaults
