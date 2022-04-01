@@ -11,6 +11,9 @@ module RPB ( Buffer (..)
            , bufferPush'
            , bufferSample
            , bufferRandomSample
+           , ereSamplingRange
+           , ereSample
+           , ereAnneal
            , PERBuffer (..)
            , mkPERBuffer
            , perPush
@@ -39,9 +42,12 @@ import qualified Torch.Functional.Internal as T (indexAdd)
 ------------------------------------------------------------------------------
 
 -- | Indicate Buffer Type
-data Buffer = RPB -- ^ Normal Replay Buffer
-            | PER -- ^ Prioritized Experience Replay
-            | MEM -- ^ PPO Style replay Memory
+data Buffer = RPB    -- ^ Normal Replay Buffer
+            | PER    -- ^ Prioritized Experience Replay
+            | MEM    -- ^ PPO Style replay Memory
+            | ERE    -- ^ Emphasizing Recent Experience
+            | PERERE -- ^ PER + ERE
+            deriving (Show, Eq)
 
 ------------------------------------------------------------------------------
 -- Replay Buffer
@@ -74,12 +80,12 @@ bufferLength = head . T.shape . rpbStates
 bufferDrop :: Int -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor
 bufferDrop cap buf = fmap (T.indexSelect 0 idx) buf
   where
-    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
-    len = bufferLength buf
-    idx' = if len < cap 
-              then ([0 .. (len - 1)] :: [Int])
-              else ([(len - cap) .. (len - 1)] :: [Int])
-    idx = T.asTensor' idx' opts
+    opts  = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+    len   = bufferLength buf
+    idx'  = if len < cap
+               then ([0 .. (len - 1)] :: [Int])
+               else ([(len - cap) .. (len - 1)] :: [Int])
+    idx   = T.asTensor' idx' opts
 
 -- | Push new memories into Buffer
 bufferPush :: Int -> ReplayBuffer T.Tensor-> T.Tensor -> T.Tensor -> T.Tensor 
@@ -109,6 +115,51 @@ bufferRandomSample batchSize buf = (`bufferSample` buf)
                                 <$> T.multinomialIO i' batchSize False
   where
     i' = toFloatGPU $ T.ones' [bufferLength buf]
+
+------------------------------------------------------------------------------
+-- Emphasizing Recente Experience
+------------------------------------------------------------------------------
+
+-- | Calculate ERE Sampling range cK
+ereSamplingRange :: Int    -- ^ Buffer Size N
+                 -> Int    -- ^ Number of Epochs K
+                 -> Int    -- ^ Current Epoch k
+                 -> Int    -- ^ cMin
+                 -> Float  -- ^ η
+                 -> Int    -- ^ cK
+ereSamplingRange n k k' cMin η = cK
+  where 
+    n'  = realToFrac n  :: Float
+    κ   = realToFrac k  :: Float
+    κ'  = realToFrac k' :: Float
+    cK' = round $ n' * (η ** (κ' * (1000 / κ)))
+    cK  = max cK' cMin
+
+-- | Sample for buffer within ERE range
+ereSample :: ReplayBuffer T.Tensor -> Int -> Int -> Int -> Int -> Int -> Float
+          -> IO (ReplayBuffer T.Tensor)
+ereSample buf cap bs epochs epoch cMin η =  (`bufferSample` buf) 
+                                        <$> randomInts lo hi bs
+  where
+    cK = ereSamplingRange cap epochs epoch cMin η
+    lo = cap - cK
+    hi = cap - 1
+
+-- | ERE η Annealing during training
+ereAnneal :: Float -- ^ Initial η0
+          -> Float -- ^ Final ηt
+          -> Int   -- ^ Horizon T
+          -> Int   -- ^ Current step t
+          -> Float -- ^ Current ηt
+ereAnneal η0 ηT t t' = ηt
+  where
+    τ  = realToFrac t  :: Float
+    τ' = realToFrac t' :: Float
+    ηt = η0 + (ηT - η0) * (τ' / τ)
+
+------------------------------------------------------------------------------
+-- Prioritized Experience Replay
+------------------------------------------------------------------------------
 
 -- | Strict Prioritized Experience Replay Buffer
 data PERBuffer a = PERBuffer { perMemories   :: ReplayBuffer a -- ^ Actual Buffer
