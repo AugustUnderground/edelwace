@@ -334,7 +334,6 @@ train obsDim actDim envUrl trackingUri = do
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl tracker False buffer states)
-    
     createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker
