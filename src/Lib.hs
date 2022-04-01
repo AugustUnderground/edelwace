@@ -479,7 +479,7 @@ mkTracker uri' expName = do
 mkTracker' :: String -> Int -> String -> IO Tracker
 mkTracker' host port = mkTracker (MLF.trackingURI' host port)
 
----- | Create a new Experiment with rng suffix
+-- | Create a new Experiment with rng suffix
 newExperiment :: Tracker -> String -> IO Tracker
 newExperiment Tracker{..} expName = do
     suffix <- (round . (* 1000) <$> getPOSIXTime :: IO Int)
@@ -487,13 +487,13 @@ newExperiment Tracker{..} expName = do
     expId' <- MLF.createExperiment uri expName'
     pure (Tracker uri expId' expName' M.empty)
 
----- | Create a new Experiment
+-- | Create a new Experiment
 newExperiment' :: Tracker -> String -> IO Tracker
 newExperiment' Tracker{..} expName = do
     expId' <- MLF.createExperiment uri expName
     pure (Tracker uri expId' expName M.empty)
 
----- | Create a new run with a set of given paramters
+-- | Create a new run with a set of given paramters
 newRuns :: Tracker -> [String] -> [MLF.Param] -> IO Tracker
 newRuns Tracker{..} ids params' = do
     unless (M.null runIds) do
@@ -505,7 +505,7 @@ newRuns Tracker{..} ids params' = do
     let runs = M.fromList $ zip ids runIds'
     pure (Tracker uri experimentId experimentName runs)
 
----- | New run with algorithm id and #envs as log params
+-- | New run with algorithm id and #envs as log params
 newRuns' :: Int -> Tracker -> IO Tracker
 newRuns' numEnvs tracker = newRuns tracker ids params'
   where
@@ -514,7 +514,7 @@ newRuns' numEnvs tracker = newRuns tracker ids params'
     params' = MLF.Param "id" "model" 
             : map (MLF.Param "id" . show) [0 .. (numEnvs - 1)] 
 
----- | End a run
+-- | End a run
 endRun :: String -> Tracker -> IO Tracker
 endRun id' tracker@Tracker{..} = do
     _ <- MLF.endRun uri (runId tracker id')
@@ -522,14 +522,26 @@ endRun id' tracker@Tracker{..} = do
   where 
     runIds' = M.delete id' runIds
 
----- | Write Loss to Tracking Server
+-- | End all runs of a Tracker
+endRuns :: Tracker -> IO Tracker
+endRuns tracker@Tracker{..} = do
+    let _ = M.map (MLF.endRun uri . runId tracker) runIds
+    pure (Tracker uri experimentId experimentName M.empty)
+
+-- | End all runs and discard tracker
+endRuns' :: Tracker -> IO ()
+endRuns' tracker = do
+    _ <- endRuns tracker
+    pure ()
+
+-- | Write Loss to Tracking Server
 trackLoss :: Tracker -> Int -> String -> Float -> IO (Response BL.ByteString)
 trackLoss tracker@Tracker{..} epoch ident loss = 
     MLF.logMetric uri runId' ident loss epoch
   where
     runId' = runId tracker "model" 
 
----- | Write Reward to Tracking Server
+-- | Write Reward to Tracking Server
 trackReward :: Tracker -> Int -> T.Tensor -> IO ()
 trackReward tracker@Tracker{..} step reward = do
         _ <- MLF.logMetric uri rewId "sum" rSum step
@@ -549,16 +561,15 @@ trackReward tracker@Tracker{..} step reward = do
     rMin    = T.asValue (T.min reward) :: Float
     rMax    = T.asValue (T.max reward) :: Float
 
----- | Filter Performance of all envs
+-- | Filter Performance of all envs
 filterPerformance :: M.Map Int (M.Map String Float) -> [String] 
                   -> M.Map Int (M.Map String Float)
 filterPerformance performance keys = M.map keyFilter performance
   where
     keyFilter m = M.fromList $ [ (map sanatizeJSON k, fromJust $ M.lookup k m ) 
                                | k <- M.keys m, k `elem` keys ]
-    --keyFilter = M.filterWithKey (\k _ -> k `elem` keys)
 
----- | Write Current state of the Environment to Trackign Server
+-- | Write Current state of the Environment to Trackign Server
 trackEnvState :: Tracker -> HymURL -> Int -> IO ()
 trackEnvState tracker@Tracker{..} url step = do
     performance'    <- hymPoolMap url performanceRoute 

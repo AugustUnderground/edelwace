@@ -539,6 +539,9 @@ train obsDim actDim envUrl trackingUri = do
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
     saveAgent ptPath agent 
+
+    endRuns' tracker
+
     pure agent
   where 
     ptPath = "./models/" ++ algorithm

@@ -28,7 +28,7 @@ numEpochs :: Int
 numEpochs     = 16
 -- | Number of iterations
 numIterations :: Int
-numIterations = 200 -- round (1.0e6 :: Float)
+numIterations = 64 -- round (1.0e6 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -88,7 +88,7 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 η :: T.Tensor
-η  = toTensor (3.0e-4 :: Float)
+η  = toTensor (2.0e-4 :: Float)
 -- | Betas
 β1 :: Float
 β1 = 0.9
