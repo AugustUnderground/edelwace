@@ -31,6 +31,15 @@ fullLike' :: Tensor -> Float -> Tensor
 -- | Select index with [Int] from GPU tensor
 indexSelect'' :: Int -> [Int] -> Tensor -> Tensor
 
+-- | Current Timestamp as formatted string
+currentTimeStamp :: String -> IO String
+
+-- | Current Timestamp with default formatting: "%Y%m%d-%H%M%S"
+currentTimeStamp' :: IO String
+
+-- | Create a model archive directory for the given algorithm
+createModelArchiveDir :: String -> IO String
+
 -- | Calculate weight Limits based on Layer Dimensions
 weightLimit :: Linear -> Float
 
