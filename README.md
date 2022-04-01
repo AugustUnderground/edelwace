@@ -96,6 +96,12 @@ space.
 Proximal Policy Optimization (PPO) Agent for discrete and continuous action
 spaces. Start with `-l ppo` and `-v 2` for discrete electrical design space.
 
+Dscrete PPO needs about ~4k steps before plateauing around an average reward of
+~0.4. The area is way smaller than the target, while offset is not quite
+reached.
+
+![](./doc/ppo-reward-discrete.png)
+
 ### Prioritized Experience Replay (PER)
 
 [Arxiv](https://arxiv.org/abs/1511.05952)
