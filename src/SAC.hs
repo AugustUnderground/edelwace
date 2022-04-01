@@ -538,13 +538,12 @@ train obsDim actDim envUrl trackingUri = do
     let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
-    saveAgent ptPath agent 
+
+    createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker
 
     pure agent
-  where 
-    ptPath = "./models/" ++ algorithm
 
 -- | Play Environment with Soft Actor Critic Agent
 -- play :: Agent -> HymURL -> IO Agent

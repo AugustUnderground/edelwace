@@ -23,11 +23,12 @@ import GHC.Generics
 import GHC.Float             (float2Double)
 import Numeric.Limits        (maxValue, minValue)
 import Data.Time.Clock.POSIX (getPOSIXTime)
--- import System.Directory
+import Data.Time.Clock       (getCurrentTime)
+import Data.Time.Format      (formatTime, defaultTimeLocale)
+import System.Directory
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString           as BS hiding (pack)
--- import qualified Data.ByteString.Char8     as BS (pack)
 import qualified Torch                     as T
 import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
@@ -79,6 +80,27 @@ indexSelect'' dim idx ten = ten'
     opts = T.withDType T.Int32 . T.withDevice (T.device ten) $ T.defaultOpts
     idx' = T.asTensor' idx opts
     ten' = T.indexSelect dim idx' ten
+
+------------------------------------------------------------------------------
+-- File System
+------------------------------------------------------------------------------
+
+-- | Current Timestamp as formatted string
+currentTimeStamp :: String -> IO String
+currentTimeStamp format = formatTime defaultTimeLocale format <$> getCurrentTime
+
+-- | Current Timestamp with default formatting: "%Y%m%d-%H%M%S"
+currentTimeStamp' :: IO String
+currentTimeStamp' = currentTimeStamp "%Y%m%d-%H%M%S"
+
+-- | Create a model archive directory for the given algorithm
+createModelArchiveDir :: String -> IO String
+createModelArchiveDir algorithm = do
+    path <- (path' ++) <$> currentTimeStamp'
+    createDirectoryIfMissing True path
+    pure path
+  where
+    path' = "./models/" ++ algorithm ++ "/"
 
 ------------------------------------------------------------------------------
 -- Neural Networks
@@ -408,7 +430,7 @@ processGace obs Info {..} = states
   where
     ok      = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
                                                  || (k == "A") )
-                         && not ("steps" `isInfixOf`  k) 
+                         -- && not ("steps" `isInfixOf`  k) 
                          && not ("vn_"   `isPrefixOf` k)
                          && not ("v_"    `isPrefixOf` k)
                          &&     ("iss"      /=        k) 

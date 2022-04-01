@@ -334,13 +334,12 @@ train obsDim actDim envUrl trackingUri = do
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl tracker False buffer states)
-    saveAgent ptPath agent 
+    
+    createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker
 
     pure agent
-  where 
-      ptPath = "./models/" ++ algorithm
 
 -- | Play Environment with Twin Delayed Deep Deterministic Policy Gradient Agent
 --play :: Agent -> HymURL -> IO (M.Map String Float, Float)

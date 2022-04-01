@@ -23,7 +23,7 @@ import Lib
 import RPB
 import PPO.Defaults
 import qualified Normal                           as D
-import MLFlow                 (TrackingURI)
+import MLFlow           (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
@@ -363,13 +363,12 @@ train obsDim actDim envUrl trackingUri = do
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl tracker False states )
-    saveAgent ptPath agent 
+
+    createModelArchiveDir algorithm >>= (`saveAgent` agent)
     
     endRuns' tracker
 
     pure agent
-  where 
-      ptPath = "./models/" ++ algorithm
 
 -- | Play Environment with Proximal Policy Optimization Agent
 -- play :: Agent -> HymURL -> IO Agent
