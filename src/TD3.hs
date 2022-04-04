@@ -269,7 +269,10 @@ evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    _ <- trackReward tracker iteration rewards
+    _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards
+    when (step `mod` 8 == 0) do
+        _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
+        pure ()
 
     let keys   = head infos
     !states' <- if T.any dones 

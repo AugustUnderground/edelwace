@@ -275,16 +275,16 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             pure (θ1Target', θ2Target')
 
     (αlog', αOptim') <- if iteration `mod` d == 0 
-                                   then updateAlpha
-                                   else pure (αLog, αOptim)
+                           then updateAlpha
+                           else pure (αLog, αOptim)
 
     (φOnline', φOptim') <- if iteration `mod` d == 0
-                                      then updateActor
-                                      else pure (φ, φOptim)
+                              then updateActor
+                              else pure (φ, φOptim)
 
     (θ1Target', θ2Target') <- if iteration `mod` d == 0
-                                           then syncCritic
-                                           else pure (θ1', θ2')
+                                 then syncCritic
+                                 else pure (θ1', θ2')
 
     prios' <- T.detach $ T.abs (0.5 * (δ1 + δ2) + εConst)
 
@@ -300,8 +300,10 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     d'     = toFloatGPU 1.0 - rpbDones
     w      = T.reshape [-1,1] weights
     h      = toTensor h'
-    r      = rpbRewards * toTensor rewardScale
-    --r    = scaleRewards rewards ρ
+    r      = (rewardScale *) . fst . T.minDim (T.Dim 1) T.KeepDim 
+           $ T.cat (T.Dim 1) [rpbRewards, fullLike' rpbRewards minReward]
+    -- r      = rpbRewards * toTensor rewardScale
+    -- r    = scaleRewards rewards ρ
 
 -- | Perform Policy Update Steps (PER)
 updatePolicyPER :: Int -> Agent -> Tracker -> PERBuffer T.Tensor -> Int 
@@ -372,16 +374,16 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             pure (θ1Target', θ2Target')
 
     (αlog', αOptim') <- if iteration `mod` d == 0
-                                   then updateAlpha
-                                   else pure (αLog, αOptim)
+                           then updateAlpha
+                           else pure (αLog, αOptim)
 
     (φOnline', φOptim') <- if iteration `mod` d == 0
-                                      then updateActor
-                                      else pure (φ, φOptim)
+                              then updateActor
+                              else pure (φ, φOptim)
 
     (θ1Target', θ2Target') <- if iteration `mod` d == 0
-                                           then syncCritic
-                                           else pure (θ1', θ2')
+                                 then syncCritic
+                                 else pure (θ1', θ2')
 
     let agent' = Agent φOnline' θ1Online' θ2Online' θ1Target' θ2Target' 
                        φOptim'  θ1Optim'  θ2Optim'  h' αlog' αOptim'
@@ -394,8 +396,10 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     s_t1   = rpbStates'
     d'     = toFloatGPU 1.0 - rpbDones
     h      = toTensor h'
-    r      = rpbRewards * toTensor rewardScale
-    --r    = scaleRewards rewards ρ
+    r      = (rewardScale *) . fst . T.minDim (T.Dim 1) T.KeepDim 
+           $ T.cat (T.Dim 1) [rpbRewards, fullLike' rpbRewards minReward]
+    -- r      = rpbRewards * toTensor rewardScale
+    -- r      = scaleRewards rewards ρ
 
 -- | Perform Policy Update Steps (RPB)
 updatePolicyRPB :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int 
@@ -405,30 +409,37 @@ updatePolicyRPB iteration agent tracker buffer epochs =
         updateStepRPB iteration epochs agent tracker
 
 -- | Sample for ERE Buffer and perform one update step
-updateStepERE :: Int -> Int -> Tracker -> ReplayBuffer T.Tensor -> Float -> Agent
-              -> IO Agent
-updateStepERE iteration epoch tracker buffer ηt agent | epoch >= numEpochs = pure agent
-                                                      | otherwise = do
-       ereSample buffer bufferSize batchSize numEpochs epoch cMin ηt >>= 
-        updateStepRPB iteration epoch agent tracker >>=
-            updateStepERE iteration epoch' tracker buffer ηt
+updateStepERE :: Int -> Int -> Int -> Tracker -> ReplayBuffer T.Tensor -> Float 
+              -> Agent -> IO Agent
+updateStepERE iteration epoch epochs tracker buffer ηt agent | epoch >= epochs 
+                                                                = pure agent
+                                                             | otherwise       
+                                                                = do
+        ereSample buffer bufferSize batchSize epochs epoch cMin ηt >>= 
+            updateStepRPB iteration epoch agent tracker >>=
+                updateStepERE iteration epoch' epochs tracker buffer ηt
   where
     epoch' = epoch + 1
 
-updatePolicyERE :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int -> IO Agent
-updatePolicyERE iteration agent tracker buffer _ =
-        updateStepERE iteration 0 tracker buffer ηt agent
+-- | Perform Policy Update Steps (ERE)
+updatePolicyERE :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int 
+                -> IO Agent
+updatePolicyERE iteration agent tracker buffer epochs =
+        updateStepERE iteration 0 epochs tracker buffer ηt agent
   where
     ηt = ereAnneal η0 ηT numIterations iteration
 
 -- | Buffer independent exploration step in the environment
 evaluateStep :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
              -> IO (T.Tensor, T.Tensor, T.Tensor, T.Tensor)
-evaluateStep iteration _ agent envUrl tracker states = do
+evaluateStep iteration step agent envUrl tracker states = do
     actions <- act agent states
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    _ <- trackReward tracker iteration rewards
+    _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards
+    when (step `mod` 8 == 0) do
+        _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
+        pure ()
  
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
@@ -490,7 +501,8 @@ runAlgorithmPER iteration agent envUrl tracker _ buffer states = do
 
     (!buffer', !agent') <- if bufLen < batchSize 
                               then pure (buffer'', agent)
-                              else updatePolicyPER iteration agent tracker buffer'' numEpochs
+                              else updatePolicyPER iteration agent tracker
+                                                   buffer'' numEpochs
     
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -521,7 +533,7 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
 
     !agent' <- if bufLen < batchSize 
                   then pure agent
-                  else update iteration agent tracker buffer' numEpochs
+                  else updatePolicyRPB iteration agent tracker buffer' numEpochs
     
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -534,9 +546,39 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
-    update     = if bufferType ==  RPB 
-                    then updatePolicyRPB
-                    else updatePolicyERE
+
+runAlgorithmERE :: Int -> Int -> Agent -> HymURL -> Tracker -> Bool 
+                -> ReplayBuffer T.Tensor -> T.Tensor -> IO Agent
+runAlgorithmERE _ _ agent _ _ True _ _ = pure agent
+runAlgorithmERE iteration epochs agent envUrl tracker _ buffer states = do
+
+    when (verbose && iteration `mod` 10 == 0) do
+        putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
+    
+    (!memories', !states') <- evaluatePolicyRPB iteration numSteps agent envUrl 
+                                                tracker buffer states
+
+    let buffer'  = bufferPush' bufferSize buffer memories'
+        dones    = T.any $ rpbRewards memories'
+        epochs'  = if dones then 0 else epochs + 1
+        epochs'' = epochs + 1
+
+    !agent' <- if dones
+                  then updatePolicyERE iteration agent tracker buffer' epochs''
+                  else pure agent
+    
+    when (iteration `mod` 10 == 0) do
+        saveAgent ptPath agent 
+
+    let meanReward = T.mean . rpbRewards $ memories'
+        stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
+        done'      = (iteration >= numIterations) || stop
+
+    runAlgorithmERE iteration' epochs' agent' envUrl tracker done' buffer' states'
+  where
+    iteration' = iteration + 1
+    ptPath     = "./models/" ++ algorithm
+
 
 -- | Handle training for different replay buffer types
 train' :: HymURL -> Tracker -> Buffer -> T.Tensor -> Agent -> IO Agent
@@ -546,8 +588,8 @@ train' envUrl tracker PER states agent = do
 train' envUrl tracker RPB states agent = 
     runAlgorithmRPB 0 agent envUrl tracker False mkBuffer states 
 train' envUrl tracker ERE states agent = 
-    runAlgorithmRPB 0 agent envUrl tracker False mkBuffer states 
--- train' envUrl tracker PERERE states agent = undefined
+    runAlgorithmERE 0 0 agent envUrl tracker False mkBuffer states 
+-- train' envUrl tracker PERERE states agent = error "Not Implemented"
 train' _ _ _ _ _ = undefined
 
 -- | Train Soft Actor Critic Agent on Environment
