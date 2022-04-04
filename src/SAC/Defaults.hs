@@ -29,10 +29,13 @@ numEpochs :: Int
 numEpochs     = 1
 -- | Total Number of iterations
 numIterations :: Int
-numIterations = round (1.0e8 :: Float)
+numIterations = 10000 -- round (1.0e8 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
+-- | Reward Lower Bound
+minReward :: Float
+minReward     = 20.0
 -- | Size of the batches during epoch
 batchSize :: Int
 batchSize     = 256
@@ -80,8 +83,8 @@ aceVariant = 0
 σMax :: Float
 σMax        = 20.0
 -- | Reward Scaling Factor
-rewardScale :: Float
-rewardScale = 5.0
+rewardScale :: T.Tensor
+rewardScale = toTensor (5.0 :: Float)
 -- | Reward Scaling Factor
 ρ :: T.Tensor
 ρ           = toTensor (1.0e-3 :: Float)

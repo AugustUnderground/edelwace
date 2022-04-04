@@ -28,7 +28,7 @@ numEpochs :: Int
 numEpochs     = 16
 -- | Number of iterations
 numIterations :: Int
-numIterations = 64 -- round (1.0e6 :: Float)
+numIterations = 32 -- round (1.0e6 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
