@@ -81,13 +81,8 @@ Available options:
 Soft Actor Critic (SAC) Agent for continuous action space. Start with `-l sac`
 and `-v 0` for continuous electrical design space.
 
-### Twin Delayed Deep Deterministic Policy Gradient (TD3)
-
-[Arxiv](https://arxiv.org/abs/1802.09477)
-
-Twin Delayed Deep Deterministic Policy Gradient (TD3) Agent for continuous
-action space. Start with `-l td3` and `-v 0` for continuous electrical design
-space.
+It appears that state scaling / standardization makes things worse for SAC. The
+loss steadily increases and no learning occurs.
 
 ### Proximal Policy Optimization (PPO)
 
@@ -101,6 +96,14 @@ Dscrete PPO needs about ~4k steps before plateauing around an average reward of
 reached.
 
 ![](./doc/ppo-reward-discrete.png)
+
+### Twin Delayed Deep Deterministic Policy Gradient (TD3)
+
+[Arxiv](https://arxiv.org/abs/1802.09477)
+
+Twin Delayed Deep Deterministic Policy Gradient (TD3) Agent for continuous
+action space. Start with `-l td3` and `-v 0` for continuous electrical design
+space.
 
 ### Prioritized Experience Replay (PER)
 
