@@ -474,7 +474,7 @@ boolMask len idx = mask
 
 -- | Standardize state over all parallel envs
 processGace' :: T.Tensor -> Info -> T.Tensor
-processGace' obs Info{..} = T.cat (T.Dim 1) [states, steps]
+processGace' obs Info{..} = nanToNum'' $ T.cat (T.Dim 1) [states, steps]
   where
     ok       = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
                                                   || (k == "A") )
@@ -499,39 +499,46 @@ processGace' obs Info{..} = T.cat (T.Dim 1) [states, steps]
 
 -- | Process / Sanitize the Observations from GACE
 processGace :: T.Tensor -> Info -> T.Tensor
-processGace obs Info{..} = states
+processGace obs Info{..} =  nanToNum'' $ T.cat (T.Dim 1) [states, steps]
   where
-    ok      = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
-                                                 || (k == "A") )
-                         -- && not ("steps" `isInfixOf`  k) 
-                         && not ("vn_"   `isPrefixOf` k)
-                         && not ("v_"    `isPrefixOf` k)
-                         &&     ("iss"      /=        k) 
-                         &&     ("idd"      /=        k)
-                     ) observations
-    idx     = T.toDType T.Int32 . toTensor 
-            $ map (fromJust . flip elemIndex observations) ok
-    idxI    = map (fromJust . flip elemIndex ok) 
-            $ filter (\i -> ("i_" `isInfixOf` i) 
-                         || (":id" `isSuffixOf` i) 
-                     ) ok
-    mskI    = boolMask (length ok) idxI
-    frqs    = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
-    idxF    = map (fromJust . flip elemIndex ok) 
-            $ filter (\f -> any (`isInfixOf` f) frqs 
-                             || (":fug" `isSuffixOf` f)) ok
-    mskF    = boolMask (length ok) idxF
-    idxV    = map (fromJust . flip elemIndex ok) 
-            $ filter ("voff_" `isPrefixOf`) ok
-    mskV    = boolMask (length ok) idxV
-    idxA    = [fromJust $ elemIndex "A" ok]
-    mskA    = boolMask (length ok) idxA
-    obs1    = T.indexSelect 1 idx obs
-    obs2    = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
-    obs3    = T.where' mskI (obs2 * 1.0e6)  obs2
-    obs4    = T.where' mskV (obs3 * 1.0e3)  obs3
-    obs5    = T.where' mskA (obs4 * 1.0e10) obs4
-    states  = nanToNum'' obs5
+    ok       = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
+                                                  || (k == "A") )
+                          && not ("steps" `isInfixOf`  k) 
+                          && not ("vn_"   `isPrefixOf` k)
+                          && not ("v_"    `isPrefixOf` k)
+                          &&     ("iss"      /=        k) 
+                          &&     ("idd"      /=        k)
+                      ) observations
+    idx      = T.toDType T.Int32 . toTensor 
+             $ map (fromJust . flip elemIndex observations) ok
+    idxI     = map (fromJust . flip elemIndex ok) 
+             $ filter (\i -> ("i_" `isInfixOf` i) 
+                          || (":id" `isSuffixOf` i) 
+                      ) ok
+    mskI     = boolMask (length ok) idxI
+    frqs     = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
+    idxF     = map (fromJust . flip elemIndex ok) 
+             $ filter (\f -> any (`isInfixOf` f) frqs 
+                              || (":fug" `isSuffixOf` f)) ok
+    mskF     = boolMask (length ok) idxF
+    idxV     = map (fromJust . flip elemIndex ok) 
+             $ filter ("voff_" `isPrefixOf`) ok
+    mskV     = boolMask (length ok) idxV
+    idxA     = [fromJust $ elemIndex "A" ok]
+    mskA     = boolMask (length ok) idxA
+    obs1     = T.indexSelect 1 idx obs
+    obs2     = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
+    obs3     = T.where' mskI (obs2 * 1.0e6)  obs2
+    obs4     = T.where' mskV (obs3 * 1.0e3)  obs3
+    obs5     = T.where' mskA (obs4 * 1.0e10) obs4
+    states   = nanToNum'' obs5
+    sIdx     = T.toDType T.Int32 . toTensor 
+             $ [fromJust $ elemIndex "steps" observations]
+    sIdx'    = T.toDType T.Int32 . toTensor 
+             $ [fromJust $ elemIndex "max-steps" observations]
+    steps'   = T.indexSelect 1 sIdx obs
+    maxSteps = T.indexSelect 1 sIdx' obs
+    steps    = T.abs (maxSteps - steps') / maxSteps
 
 -- | Scale reward to center
 scaleRewards :: T.Tensor -> Float -> T.Tensor
