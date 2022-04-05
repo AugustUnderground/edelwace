@@ -9,6 +9,7 @@ module RPB ( Buffer (..)
            , bufferLength
            , bufferPush
            , bufferPush'
+           , bufferPop
            , bufferSample
            , bufferRandomSample
            , ereSamplingRange
@@ -100,10 +101,17 @@ bufferPush cap (ReplayBuffer s a r n d) s' a' r' n' d' = buf
     d'' = T.cat dim [d, d']
     buf = bufferDrop cap (ReplayBuffer s'' a'' r'' n'' d'')
 
--- | Pushing one buffer into another one
+-- | Push one buffer into another one
 bufferPush' :: Int -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor 
             -> ReplayBuffer T.Tensor
 bufferPush' cap buf (ReplayBuffer s a r n d) = bufferPush cap buf s a r n d
+
+-- | Pop numElems from Buffer
+bufferPop :: Int -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor
+bufferPop numElems buf = bufferSample idx buf
+  where
+    bs  = bufferLength buf
+    idx = toIntTensor ([(bs - numElems) .. (bs - 1)] :: [Int])
 
 -- | Get the given indices from Buffer
 bufferSample :: T.Tensor -> ReplayBuffer T.Tensor -> ReplayBuffer T.Tensor
