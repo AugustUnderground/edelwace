@@ -43,11 +43,49 @@ createModelArchiveDir :: String -> IO String
 -- | Calculate weight Limits based on Layer Dimensions
 weightLimit :: Linear -> Float
 
--- | Initialize Weights of Linear Layer
-weightInit :: Float -> Linear -> IO Linear
+-- | Type of weight initialization
+data Initializer
 
--- | Initialize weights based on Fan In
-weightInit' :: Linear -> IO Linear
+-- | Normally distributed weights
+Normal :: Initializer
+
+-- | Uniformally distributed weights
+Uniform :: Initializer
+
+-- | Using T.xavierNormal
+XavierNormal :: Initializer
+
+-- | Using T.xavierUniform
+XavierUniform :: Initializer
+
+-- | Using T.kaimingNormal
+KaimingNormal :: Initializer
+
+-- | Using T.kaimingUniform
+KaimingUniform :: Initializer
+Dirac :: Initializer
+Eye :: Initializer
+Ones :: Initializer
+Zeros :: Initializer
+Constant :: Initializer
+
+-- | Weights for a layer given limits and dimensions.
+initWeights :: Initializer -> Float -> Float -> [Int] -> IO IndependentTensor
+
+-- | Initialize Weights of Linear Layer
+weightInit :: Initializer -> Float -> Float -> Linear -> IO Linear
+
+-- | Initialize weights uniformally given upper and lower bounds
+weightInitUniform :: Float -> Float -> Linear -> IO Linear
+
+-- | Initialize weights uniformally based on Fan In
+weightInitUniform' :: Linear -> IO Linear
+
+-- | Initialize weights normally given mean and std bounds
+weightInitNormal :: Float -> Float -> Linear -> IO Linear
+
+-- | Initialize weights normally based on Fan In
+weightInitNormal' :: Linear -> IO Linear
 
 -- | Softly update parameters from Online Net to Target Net
 softUpdate :: Tensor -> Tensor -> Tensor -> Tensor
@@ -96,6 +134,9 @@ normal' :: [Int] -> IO Tensor
 
 -- | Generate Normally Distributed Random values given μs and σs
 normal :: Tensor -> Tensor -> IO Tensor
+
+-- | Generate Uniformally distributed values in a given range
+uniform' :: [Int] -> Float -> Float -> IO Tensor
 
 -- | Info object gotten form stepping
 data Info
@@ -237,6 +278,9 @@ loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
 
 -- | Create Boolean Mask Tensor from list of indices.
 boolMask :: Int -> [Int] -> Tensor
+
+-- | Standardize state over all parallel envs
+processGace' :: Tensor -> Info -> Tensor
 
 -- | Process / Sanitize the Observations from GACE
 processGace :: Tensor -> Info -> Tensor
@@ -465,8 +509,11 @@ bufferLength :: ReplayBuffer Tensor -> Int
 -- | Push new memories into Buffer
 bufferPush :: Int -> ReplayBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> ReplayBuffer Tensor
 
--- | Pushing one buffer into another one
+-- | Push one buffer into another one
 bufferPush' :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+
+-- | Pop numElems from Buffer
+bufferPop :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor
 
 -- | Get the given indices from Buffer
 bufferSample :: Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
@@ -606,6 +653,31 @@ module PPO
 -- | Algorithm ID
 algorithm :: String
 
+-- | Actor Network Specification
+data ActorNetSpec
+ActorNetSpec :: Int -> Int -> ActorNetSpec
+[pObsDim] :: ActorNetSpec -> Int
+[pActDim] :: ActorNetSpec -> Int
+
+-- | Critic Network Specification
+newtype CriticNetSpec
+CriticNetSpec :: Int -> CriticNetSpec
+[qObsDim] :: CriticNetSpec -> Int
+
+-- | Actor Network Architecture
+data ActorNet
+ActorNet :: Linear -> Linear -> Linear -> ActorNet
+[pLayer0] :: ActorNet -> Linear
+[pLayer1] :: ActorNet -> Linear
+[pLayer2] :: ActorNet -> Linear
+
+-- | Critic Network Architecture
+data CriticNet
+CriticNet :: Linear -> Linear -> Linear -> CriticNet
+[qLayer0] :: CriticNet -> Linear
+[qLayer1] :: CriticNet -> Linear
+[qLayer2] :: CriticNet -> Linear
+
 -- | PPO Agent
 data Agent
 Agent :: ActorNet -> CriticNet -> IndependentTensor -> Adam -> Agent
@@ -679,6 +751,9 @@ numIterations :: Int
 -- | Early stop criterion
 earlyStop :: Tensor
 
+-- | Reward Lower Bound
+minReward :: Float
+
 -- | Size of the batches during epoch
 batchSize :: Int
 
@@ -716,7 +791,7 @@ aceVariant :: Int
 σMax :: Float
 
 -- | Reward Scaling Factor
-rewardScale :: Float
+rewardScale :: Tensor
 
 -- | Reward Scaling Factor
 ρ :: Tensor
@@ -772,6 +847,33 @@ module SAC
 
 -- | Algorithm ID
 algorithm :: String
+
+-- | Actor Network Specification
+data ActorNetSpec
+ActorNetSpec :: Int -> Int -> ActorNetSpec
+[pObsDim] :: ActorNetSpec -> Int
+[pActDim] :: ActorNetSpec -> Int
+
+-- | Critic Network Specification
+data CriticNetSpec
+CriticNetSpec :: Int -> Int -> CriticNetSpec
+[qObsDim] :: CriticNetSpec -> Int
+[qActDim] :: CriticNetSpec -> Int
+
+-- | Actor Network Architecture
+data ActorNet
+ActorNet :: Linear -> Linear -> Linear -> Linear -> ActorNet
+[pLayer0] :: ActorNet -> Linear
+[pLayer1] :: ActorNet -> Linear
+[pLayerμ] :: ActorNet -> Linear
+[pLayerσ] :: ActorNet -> Linear
+
+-- | Critic Network Architecture
+data CriticNet
+CriticNet :: Linear -> Linear -> Linear -> CriticNet
+[qLayer0] :: CriticNet -> Linear
+[qLayer1] :: CriticNet -> Linear
+[qLayer2] :: CriticNet -> Linear
 
 -- | SAC Agent
 data Agent
@@ -942,6 +1044,32 @@ module TD3
 
 -- | Algorithm ID
 algorithm :: String
+
+-- | Actor Network Specification
+data ActorNetSpec
+ActorNetSpec :: Int -> Int -> ActorNetSpec
+[pObsDim] :: ActorNetSpec -> Int
+[pActDim] :: ActorNetSpec -> Int
+
+-- | Critic Network Specification
+data CriticNetSpec
+CriticNetSpec :: Int -> Int -> CriticNetSpec
+[qObsDim] :: CriticNetSpec -> Int
+[qActDim] :: CriticNetSpec -> Int
+
+-- | Actor Network Architecture
+data ActorNet
+ActorNet :: Linear -> Linear -> Linear -> ActorNet
+[pLayer0] :: ActorNet -> Linear
+[pLayer1] :: ActorNet -> Linear
+[pLayer2] :: ActorNet -> Linear
+
+-- | Critic Network Architecture
+data CriticNet
+CriticNet :: Linear -> Linear -> Linear -> CriticNet
+[qLayer0] :: CriticNet -> Linear
+[qLayer1] :: CriticNet -> Linear
+[qLayer2] :: CriticNet -> Linear
 
 -- | TD3 Agent
 data Agent
