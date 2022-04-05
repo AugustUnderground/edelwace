@@ -147,11 +147,13 @@ ereSamplingRange n k k' cMin η = cK
 ereSample :: ReplayBuffer T.Tensor -> Int -> Int -> Int -> Int -> Int -> Float
           -> IO (ReplayBuffer T.Tensor)
 ereSample buf cap bs epochs epoch cMin η =  (`bufferSample` buf) 
-                                        <$> randomInts lo hi bs
+                                        <$> randomInts lo hi bs'
   where
-    cK = ereSamplingRange cap epochs epoch cMin η
-    lo = cap - cK
-    hi = cap - 1
+    bl  = bufferLength buf
+    bs' = min bs bl
+    cK  = ereSamplingRange cap epochs epoch cMin η
+    lo  = max 0 (bl - cK)
+    hi  = bl - 1
 
 -- | ERE η Annealing during training
 ereAnneal :: Float -- ^ Initial η0
