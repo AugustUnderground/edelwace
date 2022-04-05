@@ -204,30 +204,19 @@ act Agent{..} s = do
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
 evaluate Agent{..} s εN = do
     ε <- normal' [1]
+    -- z' <- D.sample n []
     let a' = μ + σ * ε
         a  = T.tanh a'
         l1 = D.logProb n a'
+        -- l1 = D.logProb n z'
         l2 = T.log . T.abs $ 1.0 - T.pow (2.0 :: Float) a + εN
-        p  = T.meanDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
+        -- p  = T.meanDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
+        p  = T.sumDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
     pure (a,p)
   where
     (μ,σ') = π φ s
     σ      = T.exp σ'
     n      = D.Normal μ σ
-
---evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
---evaluate Agent{..} s εN = do
---    ε <- normal' [1]
---    z' <- D.sample n []
---    let a  = T.tanh (μ + σ * ε)
---        l1 = D.logProb n z'
---        l2 = T.log . T.abs $ 1.0 - T.pow (2.0 :: Float) a + εN
---        p  = T.sumDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
---    pure (a,p)
---  where
---    (μ,σ') = π φ s
---    σ      = T.exp σ'
---    n      = D.Normal μ σ
 
 ------------------------------------------------------------------------------
 -- Training
@@ -315,7 +304,7 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     s_t0   = rpbStates
     a_t0   = rpbActions
     s_t1   = rpbStates'
-    d'     = toFloatGPU 1.0 - rpbDones
+    d'     = toFloatGPU (1.0 - rpbDones)
     w      = T.reshape [-1,1] weights
     h      = toTensor h'
     r      = rpbRewards * rewardScale
@@ -413,7 +402,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     s_t0   = rpbStates
     a_t0   = rpbActions
     s_t1   = rpbStates'
-    d'     = toFloatGPU 1.0 - rpbDones
+    d'     = toFloatGPU (1.0 - rpbDones)
     h      = toTensor h'
     r      = rpbRewards * rewardScale
     -- r      = (rewardScale *) . fst . T.minDim (T.Dim 1) T.KeepDim 
@@ -455,8 +444,9 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker ReplayBuffer{..} = do
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
     
     when (verbose && epoch `mod` 4 == 0) do
-        putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
-        putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
+        putStrLn $ "\tEpoch " ++ show epoch
+        putStrLn $ "\t\tQ1 Loss:\t" ++ show jQ1
+        putStrLn $ "\t\tQ2 Loss:\t" ++ show jQ2
 
     _ <- trackLoss tracker (iteration + epoch) "Q1" (T.asValue jQ1 :: Float)
     _ <- trackLoss tracker (iteration + epoch) "Q2" (T.asValue jQ2 :: Float)
@@ -467,7 +457,7 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker ReplayBuffer{..} = do
     let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
 
     when (verbose && epoch `mod` 4 == 0) do
-        putStrLn $ "\tα  Loss:\t" ++ show jα
+        putStrLn $ "\t\tα  Loss:\t" ++ show jα
     _ <- trackLoss tracker (iteration + epoch) "alpha" (T.asValue jα :: Float)
 
     (αlog', αOptim') <- T.runStep αLog αOptim jα ηα
@@ -475,8 +465,8 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker ReplayBuffer{..} = do
     q_t0' <- T.detach $ q' θ1 θ2 s_t0 a_t0'
     let jπ = T.mean $ (α' * logπ_t0') - q_t0'
 
-    when (verbose && epoch `mod` 8 == 0) do
-        putStrLn $ "\tπ  Loss:\t" ++ show jπ
+    when (verbose && epoch `mod` 4 == 0) do
+        putStrLn $ "\t\tπ  Loss:\t" ++ show jπ
     _ <- trackLoss tracker (iteration + epoch) "policy" (T.asValue jπ :: Float)
 
     (φOnline', φOptim') <- T.runStep φ φOptim jπ ηπ
@@ -490,7 +480,7 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker ReplayBuffer{..} = do
     s_t0   = rpbStates
     a_t0   = rpbActions
     s_t1   = rpbStates'
-    d'     = toFloatGPU 1.0 - rpbDones
+    d'     = toFloatGPU (1.0 - rpbDones)
     h      = toTensor h'
     r      = rpbRewards * rewardScale
     -- r      = (rewardScale *) . fst . T.minDim (T.Dim 1) T.KeepDim 
@@ -528,8 +518,8 @@ evaluateStep iteration _ agent envUrl tracker states = do
    
     let keys = head infos
     !states' <- if T.any dones 
-                   then flip processGace' keys <$> resetPool' envUrl dones
-                   else pure $ processGace' states'' keys
+                   then flip processGace keys <$> resetPool' envUrl dones
+                   else pure $ processGace states'' keys
 
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
@@ -642,6 +632,9 @@ runAlgorithmERE iteration epochs numEnvs agent envUrl tracker _ buffer states = 
         epochs' = if dones then 0 else epochs + 1
         ηt      = ereAnneal η0 ηT numIterations iteration
 
+    when (dones && epochs > 1) do
+        putStrLn $ "\tRun update for " ++ show epochs ++ " Epochs."
+
     !agent' <- if dones && epochs > 1
                   then updatePolicyERE iteration 0 epochs tracker buffer ηt agent
                   else pure agent
@@ -680,7 +673,7 @@ train obsDim actDim envUrl trackingUri = do
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
 
-    let !states = processGace' states' keys
+    let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
     createModelArchiveDir algorithm >>= (`saveAgent` agent)

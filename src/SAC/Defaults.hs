@@ -84,7 +84,7 @@ aceVariant = 0
 σMax        = 20.0
 -- | Reward Scaling Factor
 rewardScale :: T.Tensor
-rewardScale = toTensor (10.0 :: Float)
+rewardScale = toTensor (5.0 :: Float)
 -- | Reward Scaling Factor
 ρ :: T.Tensor
 ρ           = toTensor (1.0e-3 :: Float)
@@ -107,10 +107,10 @@ wInit =  3.0e-3
 ηπ    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Critic(s)
 ηq :: T.Tensor
-ηq    = toTensor (3.0e-4 :: Float)
+ηq    = toTensor (1.5e-4 :: Float)
 -- | Learning Rate for Alpha
 ηα :: T.Tensor
-ηα    = toTensor (3.0e-4 :: Float)
+ηα    = toTensor (1.5e-4 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
