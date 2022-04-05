@@ -9,6 +9,10 @@
 
 -- | Twin Delayed Deep Deterministic Policy Gradient Algorithm
 module TD3 ( algorithm
+           , ActorNetSpec (..)
+           , CriticNetSpec (..)
+           , ActorNet (..)
+           , CriticNet (..)
            , Agent (..)
            , mkAgent
            , saveAgent
@@ -58,20 +62,20 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
     sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 400) 
-                                             >>= weightInit' )
+                                             >>= weightInitUniform' )
                                        <*> ( T.sample (T.LinearSpec 400     300)
-                                             >>= weightInit' )
+                                             >>= weightInitUniform' )
                                        <*> ( T.sample (T.LinearSpec 300 pActDim)
-                                             >>= weightInit wInit )
+                                             >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 400) 
-                                               >>= weightInit' )
+                                               >>= weightInitUniform' )
                                          <*> ( T.sample (T.LinearSpec 400 300) 
-                                               >>= weightInit' )
+                                               >>= weightInitUniform' )
                                          <*> ( T.sample (T.LinearSpec 300 1) 
-                                               >>= weightInit' )
+                                               >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
 -- | Actor Network Forward Pass
@@ -269,9 +273,9 @@ evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards
-    when (step `mod` 8 == 0) do
-        _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
+    _ <- trackReward tracker iteration rewards
+    when (iteration `mod` 8 == 0) do
+        _ <- trackEnvState tracker envUrl iteration
         pure ()
 
     let keys   = head infos

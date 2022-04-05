@@ -9,6 +9,10 @@
 
 -- | Proximal Policy Optimization Algorithm
 module PPO ( algorithm
+           , ActorNetSpec (..)
+           , CriticNetSpec (..)
+           , ActorNet (..)
+           , CriticNet (..)
            , Agent (..)
            , mkAgent
            , saveAgent
@@ -59,20 +63,20 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
     sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
-                                             >>= weightInit' )
+                                             >>= weightInitNormal' )
                                        <*> ( T.sample (T.LinearSpec 256     256)
-                                             >>= weightInit' )
+                                             >>= weightInitNormal' )
                                        <*> ( T.sample (T.LinearSpec 256 pActDim)
-                                             >>= weightInit wInit )
+                                             >>= weightInitNormal 0.0 wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 256) 
-                                               >>= weightInit' )
+                                               >>= weightInitNormal' )
                                          <*> ( T.sample (T.LinearSpec 256 256) 
-                                               >>= weightInit' )
+                                               >>= weightInitNormal' )
                                          <*> ( T.sample (T.LinearSpec 256 1) 
-                                               >>= weightInit' )
+                                               >>= weightInitNormal' )
 
 -- | Continuous Actor Network Forward Pass
 πContinuous :: ActorNet -> T.Tensor -> T.Tensor
@@ -294,7 +298,7 @@ evaluateStep iteration step agent envUrl tracker states mem = do
                                                  else stepPool  envUrl actions'
 
     _ <- trackReward tracker (iteration * numSteps + (numSteps - step)) rewards'
-    when (step `mod` 8 == 0) do
+    when (even step) do
         _ <- trackEnvState tracker envUrl (iteration * numSteps + (numSteps - step))
         pure ()
 
