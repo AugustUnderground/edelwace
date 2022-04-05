@@ -84,13 +84,13 @@ aceVariant = 0
 σMax        = 20.0
 -- | Reward Scaling Factor
 rewardScale :: T.Tensor
-rewardScale = toTensor (5.0 :: Float)
+rewardScale = toTensor (10.0 :: Float)
 -- | Reward Scaling Factor
 ρ :: T.Tensor
 ρ           = toTensor (1.0e-3 :: Float)
 -- | Update Step frequency
 d :: Int
-d = 1
+d           = 1
 -- | Priority update factor
 εConst :: T.Tensor
 εConst      = toTensor (1.0e-5 :: Float)
@@ -101,16 +101,16 @@ d = 1
 
 -- | Initial weights
 wInit :: Float
-wInit = 3.0e-3
+wInit =  3.0e-3
 -- | Learning Rate for Actor / Policy
 ηπ :: T.Tensor
-ηπ    = toTensor (1.0e-4 :: Float)
+ηπ    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Critic(s)
 ηq :: T.Tensor
-ηq    = toTensor (2.0e-4 :: Float)
+ηq    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Alpha
 ηα :: T.Tensor
-ηα    = toTensor (2.0e-4 :: Float)
+ηα    = toTensor (3.0e-4 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
@@ -124,7 +124,7 @@ wInit = 3.0e-3
 
 -- | Maximum size of Replay Buffer
 bufferSize :: Int
-bufferSize = round (5.0e6 :: Float)
+bufferSize = round (1.0e6 :: Float)
 -- | Powerlaw Exponent
 αStart :: Float
 αStart     = 0.6
