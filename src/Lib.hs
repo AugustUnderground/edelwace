@@ -33,7 +33,7 @@ import qualified Torch                     as T
 import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
 import qualified Torch.Functional.Internal as T         (where', nan_to_num)
-import qualified Torch.Initializers        as T         (xavierNormal)
+import qualified Torch.Initializers        as T
 import qualified MLFlow                    as MLF
 import qualified MLFlow.DataStructures     as MLF
 
@@ -112,18 +112,58 @@ weightLimit layer = fanIn ** (- 0.5)
   where
     fanIn = realToFrac . head . T.shape . T.toDependent . NN.weight $ layer
 
+-- | Type of weight initialization
+data Initializer = Normal           -- ^ Normally distributed weights
+                 | Uniform          -- ^ Uniformally distributed weights
+                 | XavierNormal     -- ^ Using T.xavierNormal
+                 | XavierUniform    -- ^ Using T.xavierUniform
+                 | KaimingNormal    -- ^ Using T.kaimingNormal
+                 | KaimingUniform   -- ^ Using T.kaimingUniform
+                 | Dirac
+                 | Eye
+                 | Ones
+                 | Zeros
+                 | Constant
+
+-- | Weights for a layer given limits and dimensions.
+initWeights :: Initializer -> Float -> Float -> [Int] -> IO T.IndependentTensor
+initWeights Uniform lo   hi  dims = uniform' dims lo hi >>= T.makeIndependent
+initWeights Normal  mean std dims = normal        m' s' >>= T.makeIndependent
+  where
+    m' = toFloatGPU $ T.full' dims mean
+    s' = toFloatGPU $ T.full' dims std
+initWeights XavierNormal   gain _ dims = T.xavierNormal  gain dims >>= T.makeIndependent
+initWeights XavierUniform  gain _ dims = T.xavierUniform gain dims >>= T.makeIndependent
+initWeights KaimingNormal  _    _ dims = T.kaimingNormal T.FanIn T.Relu dims >>= T.makeIndependent
+initWeights KaimingUniform _    _ dims = T.kaimingUniform T.FanIn T.Relu dims >>= T.makeIndependent
+initWeights _ _ _ _                    = error "Not Implemented"
+
 -- | Initialize Weights of Linear Layer
-weightInit :: Float -> T.Linear -> IO T.Linear
-weightInit limit layer = do
-    weight' <- T.xavierNormal limit dims >>= T.makeIndependent
+weightInit :: Initializer -> Float -> Float -> T.Linear -> IO T.Linear
+weightInit initType p1 p2 layer = do
+    weight' <- initWeights initType p1 p2 dims
     pure T.Linear { NN.weight = weight', NN.bias = bias' }
   where
     dims  = T.shape . T.toDependent . NN.weight $ layer
     bias' = NN.bias layer
 
--- | Initialize weights based on Fan In
-weightInit' :: T.Linear -> IO T.Linear
-weightInit' layer = weightInit limit layer
+-- | Initialize weights uniformally given upper and lower bounds
+weightInitUniform :: Float -> Float -> T.Linear -> IO T.Linear
+weightInitUniform = weightInit Uniform
+
+-- | Initialize weights uniformally based on Fan In
+weightInitUniform' :: T.Linear -> IO T.Linear
+weightInitUniform' layer = weightInit Uniform (-limit) limit layer
+  where
+    limit = weightLimit layer
+
+-- | Initialize weights normally given mean and std bounds
+weightInitNormal :: Float -> Float -> T.Linear -> IO T.Linear
+weightInitNormal = weightInit Normal
+
+-- | Initialize weights normally based on Fan In
+weightInitNormal' :: T.Linear -> IO T.Linear
+weightInitNormal' layer = weightInit Normal 0.0 limit layer
   where
     limit = weightLimit layer
 
@@ -223,6 +263,14 @@ normal' dims = T.randnIO dims opts
 -- | Generate Normally Distributed Random values given μs and σs
 normal :: T.Tensor -> T.Tensor -> IO T.Tensor
 normal μ σ = toFloatGPU <$> T.normalIO μ σ
+
+-- | Generate Uniformally distributed values in a given range
+uniform' :: [Int] -> Float -> Float -> IO T.Tensor
+uniform' shape lo hi = unscale . toFloatGPU <$> T.randIO' shape
+  where
+    xMin = toTensor lo
+    xMax = toTensor hi
+    unscale x = x * (xMax - xMin) + xMin
 
 ------------------------------------------------------------------------------
 -- Hym Server Interaction and Environment
@@ -424,9 +472,34 @@ boolMask len idx = mask
   where
     mask = T.toDType T.Bool . toTensor $ map (`elem` idx) [0 .. (len - 1)]
 
+-- | Standardize state over all parallel envs
+processGace' :: T.Tensor -> Info -> T.Tensor
+processGace' obs Info{..} = T.cat (T.Dim 1) [states, steps]
+  where
+    ok       = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
+                                                  || (k == "A") )
+                          && not ("steps" `isInfixOf`  k) 
+                          && not ("vn_"   `isPrefixOf` k)
+                          && not ("v_"    `isPrefixOf` k)
+                          &&     ("iss"      /=        k) 
+                          &&     ("idd"      /=        k)
+                      ) observations
+    idx      = T.toDType T.Int32 . toTensor 
+             $ map (fromJust . flip elemIndex observations) ok
+    states'  = T.indexSelect 1 idx obs
+    (σs, μs) = T.stdMeanDim (T.Dim 0) True T.RemoveDim states'
+    states   = (states' - μs) / σs
+    sIdx     = T.toDType T.Int32 . toTensor 
+             $ [fromJust $ elemIndex "steps" observations]
+    sIdx'    = T.toDType T.Int32 . toTensor 
+             $ [fromJust $ elemIndex "max-steps" observations]
+    steps'   = T.indexSelect 1 sIdx obs
+    maxSteps = T.indexSelect 1 sIdx' obs
+    steps    = T.abs (maxSteps - steps') / maxSteps
+
 -- | Process / Sanitize the Observations from GACE
 processGace :: T.Tensor -> Info -> T.Tensor
-processGace obs Info {..} = states
+processGace obs Info{..} = states
   where
     ok      = filter (\k -> ( (k `elem` actions) || (isLower . head $ k) 
                                                  || (k == "A") )
