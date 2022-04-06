@@ -20,16 +20,18 @@ verbose :: Bool
 verbose       = True
 -- | Replay Buffer Type
 bufferType :: Buffer
-bufferType    = ERE
+bufferType    = RPB
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1
 -- | How many gradient update steps
 numEpochs :: Int
 numEpochs     = 1
--- | Total Number of iterations
+-- | Total Number of iterations, depends on `bufferType`.
 numIterations :: Int
-numIterations = 10000 -- round (1.0e8 :: Float)
+numIterations = if bufferType == RPB 
+                   then round (1.0e4 :: Float)
+                   else round (1.0e6 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -38,7 +40,7 @@ minReward :: Float
 minReward     = 20.0
 -- | Size of the batches during epoch
 batchSize :: Int
-batchSize     = 256
+batchSize     = 64
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
@@ -73,9 +75,13 @@ aceVariant = 0
 -- | Action Noise
 εNoise :: T.Tensor
 εNoise      = toTensor (1.0e-6 :: Float)
--- | Temperature Parameter
-αConst :: Float
-αConst      = 0.2   -- 3.0e-4
+-- | Whether temperature coefficient is fixed or not (see αConst)
+αLearned :: Bool
+αLearned    = False
+-- | Temperature Parameter: Left is Learned, Right is Fixed
+αConst :: T.Tensor
+αConst      = T.log $ toTensor (0.2 :: Float) -- 3.0e-4
+-- αConst      = toTensor (0.0 :: Float)
 -- | Lower Variance Clipping
 σMin :: Float
 σMin        = -2.0
@@ -107,7 +113,7 @@ wInit =  3.0e-3
 ηπ    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Critic(s)
 ηq :: T.Tensor
-ηq    = toTensor (1.5e-4 :: Float)
+ηq    = toTensor (1.0e-4 :: Float)
 -- | Learning Rate for Alpha
 ηα :: T.Tensor
 ηα    = toTensor (1.5e-4 :: Float)

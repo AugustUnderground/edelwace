@@ -36,6 +36,8 @@ import MLFlow                 (TrackingURI)
 import Control.Monad
 import GHC.Generics
 import qualified Torch                            as T
+--import qualified Torch.Functional                 as T (indexPut)
+--import qualified Torch.Functional.Internal        as T (indexAdd)
 import qualified Torch.NN                         as NN
 import qualified Torch.Distributions.Distribution as D
 
@@ -136,7 +138,7 @@ mkAgent obsDim actDim = do
     θ1Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
     θ2Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
 
-    αlog <- T.makeIndependent . toFloatGPU $ T.zeros' [1]
+    αlog <- T.makeIndependent αConst
 
     let θ1Target = copySync θ1Target' θ1Online
         θ2Target = copySync θ2Target' θ2Online
@@ -190,6 +192,9 @@ loadAgent path obsDim iter actDim = do
         fαOpt  <- loadOptim iter β1 β2 (path ++ "/alphaOptim")
        
         pure $ Agent fφ fθ1 fθ2 fθ1' fθ2' fφOpt fθ1Opt fθ2Opt h' fαLog fαOpt
+
+-- transferAgent :: Agent -> Agent -> IO Agent
+-- transferAgent source@Agent{..} target = pure source
 
 -- | Get an Action (no grad)
 act :: Agent -> T.Tensor -> IO T.Tensor
@@ -281,7 +286,7 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             θ2Target' <- softSync τ θ2' θ2 
             pure (θ1Target', θ2Target')
 
-    (αlog', αOptim') <- if iteration `mod` d == 0 
+    (αlog', αOptim') <- if iteration `mod` d == 0 && αLearned
                            then updateAlpha
                            else pure (αLog, αOptim)
 
@@ -381,7 +386,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
             θ2Target' <- softSync τ θ2' θ2 
             pure (θ1Target', θ2Target')
 
-    (αlog', αOptim') <- if iteration `mod` d == 0
+    (αlog', αOptim') <- if iteration `mod` d == 0 && αLearned
                            then updateAlpha
                            else pure (αLog, αOptim)
 
@@ -507,7 +512,7 @@ evaluateStep iteration _ agent envUrl tracker states = do
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
     
     _ <- trackReward tracker iteration rewards
-    when (iteration `mod` 8 == 0) do
+    when (even iteration) do
         _ <- trackEnvState tracker envUrl iteration
         pure ()
  
