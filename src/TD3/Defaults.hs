@@ -4,6 +4,7 @@
 module TD3.Defaults where
 
 import Lib
+import RPB
 
 import qualified Torch as T
 
@@ -106,6 +107,9 @@ wInit = 3.0e-3
 --  Memory / Replay Buffer Settings
 ------------------------------------------------------------------------------
 
+-- | Replay Buffer Type
+bufferType :: Buffer
+bufferType    = HER
 -- | Replay Buffer Size
 bufferSize :: Int
 bufferSize    = round (1.0e6 :: Float)

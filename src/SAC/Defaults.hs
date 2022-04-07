@@ -40,7 +40,7 @@ minReward :: Float
 minReward     = 20.0
 -- | Size of the batches during epoch
 batchSize :: Int
-batchSize     = 64
+batchSize     = 256
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
