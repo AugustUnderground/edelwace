@@ -31,6 +31,12 @@ fullLike' :: Tensor -> Float -> Tensor
 -- | Select index with [Int] from GPU tensor
 indexSelect'' :: Int -> [Int] -> Tensor -> Tensor
 
+-- | Apply same function to both Left and Right
+both :: (a -> b) -> Either a a -> b
+
+-- | Apply same function to both Left and Right and put back into Either
+both' :: (a -> b) -> Either a a -> Either b b
+
 -- | Current Timestamp as formatted string
 currentTimeStamp :: String -> IO String
 
@@ -745,7 +751,7 @@ numSteps :: Int
 -- | How many gradient update steps
 numEpochs :: Int
 
--- | Total Number of iterations
+-- | Total Number of iterations, depends on <a>bufferType</a>.
 numIterations :: Int
 
 -- | Early stop criterion
@@ -781,8 +787,11 @@ aceVariant :: Int
 -- | Action Noise
 εNoise :: Tensor
 
--- | Temperature Parameter
-αConst :: Float
+-- | Whether temperature coefficient is fixed or learned (see αInit)
+αLearned :: Bool
+
+-- | Temperature Coefficient
+αInit :: Tensor
 
 -- | Lower Variance Clipping
 σMin :: Float
@@ -929,6 +938,9 @@ q :: CriticNet -> Tensor -> Tensor -> Tensor
 
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
+
+-- | Perform a completely random action for a given state
+actRandom :: Agent -> Tensor -> IO Tensor
 
 -- | Get an Action (no grad)
 act :: Agent -> Tensor -> IO Tensor
