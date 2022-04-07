@@ -32,6 +32,11 @@ library
       PPO
       PPO.Defaults
       RPB
+      RPB.ERE
+      RPB.HER
+      RPB.MEM
+      RPB.PER
+      RPB.RPB
       SAC
       SAC.Defaults
       TD3

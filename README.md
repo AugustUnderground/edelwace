@@ -120,6 +120,12 @@ Only implemented in SAC and deactivated for the moment. To quote ERE Paper:
 
 ...
 
+### Hindsight Experience Replay (HER)
+
+[Arxiv](https://arxiv.org/abs/1707.01495)
+
+...
+
 ## Results
 
 ...
@@ -131,11 +137,14 @@ Only implemented in SAC and deactivated for the moment. To quote ERE Paper:
 - [X] Implement PPO
 - [X] Implement PER
 - [X] Implement ERE
-- [ ] Implement ERE+PER
-- [ ] Implement HER
-- [ ] Visualization (MLFlow?)
+- [X] Implement SAC+PER
+- [X] Implement SAC+ERE
+- [ ] Implement SAC+ERE+PER
+- [X] Implement HER
+- [ ] Implement TD3+HER
 - [ ] Wait for Normal Distribution in HaskTorch
 - [ ] Remove strictness where unecessary
 - [X] Add agent loading ability
 - [X] Command Line Options
 - [X] MLFlow tracking
+- [X] Visualization (MLFlow?)
