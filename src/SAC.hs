@@ -20,6 +20,7 @@ module SAC ( algorithm
            , π
            , q
            , q'
+           , actRandom
            , act
            , evaluate
            , train
@@ -138,7 +139,7 @@ mkAgent obsDim actDim = do
     θ1Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
     θ2Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
 
-    αlog <- T.makeIndependent αConst
+    αlog <- T.makeIndependent αInit
 
     let θ1Target = copySync θ1Target' θ1Online
         θ2Target = copySync θ2Target' θ2Online
@@ -196,10 +197,19 @@ loadAgent path obsDim iter actDim = do
 -- transferAgent :: Agent -> Agent -> IO Agent
 -- transferAgent source@Agent{..} target = pure source
 
+-- | Perform a completely random action for a given state
+actRandom :: Agent -> T.Tensor -> IO T.Tensor
+actRandom Agent{..} s = do
+    a <- toFloatGPU <$> T.randLikeIO' μ
+    pure $ a * 2.0 - 1
+  where
+    (μ,_) = π φ s
+
 -- | Get an Action (no grad)
 act :: Agent -> T.Tensor -> IO T.Tensor
 act Agent{..} s = do
-    ε <- normal' [1]
+    -- ε <- normal' [1]
+    ε <- toFloatGPU <$> T.randnLikeIO μ
     T.detach . T.tanh $ (μ + σ * ε)
   where
     (μ,σ') = π φ s
@@ -208,13 +218,15 @@ act Agent{..} s = do
 -- | Get an action and log probs (grad)
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
 evaluate Agent{..} s εN = do
-    ε <- normal' [1]
     -- z' <- D.sample n []
+    -- ε <- normal' [1]
+    ε <- toFloatGPU <$> T.randnLikeIO μ
     let a' = μ + σ * ε
         a  = T.tanh a'
         l1 = D.logProb n a'
         -- l1 = D.logProb n z'
         l2 = T.log . T.abs $ 1.0 - T.pow (2.0 :: Float) a + εN
+        -- l2 = T.log . T.abs $ 1.0 - (a * a) + εN
         -- p  = T.meanDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
         p  = T.sumDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
     pure (a,p)

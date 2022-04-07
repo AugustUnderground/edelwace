@@ -30,8 +30,8 @@ numEpochs     = 1
 -- | Total Number of iterations, depends on `bufferType`.
 numIterations :: Int
 numIterations = if bufferType == RPB 
-                   then round (1.0e4 :: Float)
-                   else round (1.0e6 :: Float)
+                   then round (1.0e6 :: Float)
+                   else round (1.0e4 :: Float)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -75,13 +75,14 @@ aceVariant = 0
 -- | Action Noise
 εNoise :: T.Tensor
 εNoise      = toTensor (1.0e-6 :: Float)
--- | Whether temperature coefficient is fixed or not (see αConst)
+-- | Whether temperature coefficient is fixed or learned (see αInit)
 αLearned :: Bool
-αLearned    = False
--- | Temperature Parameter: Left is Learned, Right is Fixed
-αConst :: T.Tensor
-αConst      = T.log $ toTensor (0.2 :: Float) -- 3.0e-4
--- αConst      = toTensor (0.0 :: Float)
+αLearned    = True
+-- | Temperature Coefficient
+αInit :: T.Tensor
+αInit      = if αLearned 
+                then toTensor (0.0 :: Float)
+                else T.log $ toTensor (0.036 :: Float) -- 0.2
 -- | Lower Variance Clipping
 σMin :: Float
 σMin        = -2.0
