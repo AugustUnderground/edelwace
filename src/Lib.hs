@@ -81,6 +81,15 @@ indexSelect'' dim idx ten = ten'
     idx' = T.asTensor' idx opts
     ten' = T.indexSelect dim idx' ten
 
+-- | Apply same function to both Left and Right
+both :: (a -> b) -> Either a a -> b
+both f = either f f
+
+-- | Apply same function to both Left and Right and put back into Either
+both' :: (a -> b) -> Either a a -> Either b b
+both' f (Right e) = Right (f e)
+both' f (Left e)  = Left (f e)
+
 ------------------------------------------------------------------------------
 -- File System
 ------------------------------------------------------------------------------
