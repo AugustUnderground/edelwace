@@ -469,112 +469,79 @@ wInit :: Float
 -- | Replay Buffers and Memory Loaders
 module RPB
 
--- | Indicate Buffer Type
+-- | Indicate Buffer Type to be used by Algorithm
 data Buffer
 
--- | Normal Replay Buffer
+-- | Normal Replay Buffer (SAC, TD3)
 RPB :: Buffer
 
--- | Prioritized Experience Replay
+-- | Prioritized Experience Replay (SAC)
 PER :: Buffer
 
--- | PPO Style replay Memory
+-- | PPO Style replay Memory (PPO)
 MEM :: Buffer
 
--- | Emphasizing Recent Experience
+-- | Emphasizing Recent Experience (SAC)
 ERE :: Buffer
 
--- | PER + ERE
-PERERE :: Buffer
+-- | Hindsight Experience Replay (TD3)
+HER :: Buffer
+instance GHC.Classes.Eq RPB.Buffer
+instance GHC.Show.Show RPB.Buffer
 
--- | Strict Simple/Naive Replay Buffer
-data ReplayBuffer a
-ReplayBuffer :: !a -> !a -> !a -> !a -> !a -> ReplayBuffer a
+
+-- | Replay Buffers and Memory Loaders
+module RPB.HER
+
+-- | Strict Hindsight Experience Replay Buffer
+data HERBuffer a
+HERBuffer :: !a -> !a -> !a -> !a -> !a -> !a -> HERBuffer a
 
 -- | States
-[rpbStates] :: ReplayBuffer a -> !a
+[herStates] :: HERBuffer a -> !a
 
 -- | Actions
-[rpbActions] :: ReplayBuffer a -> !a
+[herActions] :: HERBuffer a -> !a
 
 -- | Rewards
-[rpbRewards] :: ReplayBuffer a -> !a
+[herRewards] :: HERBuffer a -> !a
 
 -- | Next States
-[rpbStates'] :: ReplayBuffer a -> !a
+[herStates'] :: HERBuffer a -> !a
 
 -- | Terminal Mask
-[rpbDones] :: ReplayBuffer a -> !a
+[herDones] :: HERBuffer a -> !a
 
--- | Create a new, empty Buffer on the CPU
-mkBuffer :: ReplayBuffer Tensor
+-- | Targets
+[herTargets] :: HERBuffer a -> !a
+
+-- | Create a new, empty HER Buffer on the GPU
+mkHERBuffer :: HERBuffer Tensor
 
 -- | How many Trajectories are currently stored in memory
-bufferLength :: ReplayBuffer Tensor -> Int
+herLength :: HERBuffer Tensor -> Int
+
+-- | Drop number of entries from the beginning of the Buffer
+herDrop :: Int -> HERBuffer Tensor -> HERBuffer Tensor
 
 -- | Push new memories into Buffer
-bufferPush :: Int -> ReplayBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> ReplayBuffer Tensor
+herPush :: Int -> HERBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> HERBuffer Tensor
 
 -- | Push one buffer into another one
-bufferPush' :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
-
--- | Pop numElems from Buffer
-bufferPop :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+herPush' :: Int -> HERBuffer Tensor -> HERBuffer Tensor -> HERBuffer Tensor
 
 -- | Get the given indices from Buffer
-bufferSample :: Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+herSample :: Tensor -> HERBuffer Tensor -> HERBuffer Tensor
 
 -- | Uniform random sample from Replay Buffer
-bufferRandomSample :: Int -> ReplayBuffer Tensor -> IO (ReplayBuffer Tensor)
+herRandomSample :: Int -> HERBuffer Tensor -> IO (HERBuffer Tensor)
+instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.HER.HERBuffer a)
+instance GHC.Show.Show a => GHC.Show.Show (RPB.HER.HERBuffer a)
+instance GHC.Base.Functor RPB.HER.HERBuffer
 
--- | Calculate ERE Sampling range cK
-ereSamplingRange :: Int -> Int -> Int -> Int -> Float -> Int
 
--- | Sample for buffer within ERE range
-ereSample :: ReplayBuffer Tensor -> Int -> Int -> Int -> Int -> Int -> Float -> IO (ReplayBuffer Tensor)
-
--- | ERE η Annealing during training
-ereAnneal :: Float -> Float -> Int -> Int -> Float
-
--- | Strict Prioritized Experience Replay Buffer
-data PERBuffer a
-PERBuffer :: ReplayBuffer a -> !Tensor -> !Int -> !Float -> !Float -> !Int -> PERBuffer a
-
--- | Actual Buffer
-[perMemories] :: PERBuffer a -> ReplayBuffer a
-
--- | Sample Weights
-[perPriorities] :: PERBuffer a -> !Tensor
-
--- | Buffer Capacity
-[perCapacity] :: PERBuffer a -> !Int
-
--- | Exponent Alpha
-[perAlpha] :: PERBuffer a -> !Float
-
--- | Initial Exponent Beta
-[perBetaStart] :: PERBuffer a -> !Float
-
--- | Beta Decay
-[perBetaFrames] :: PERBuffer a -> !Int
-
--- | Create an empty PER Buffer
-mkPERBuffer :: Int -> Float -> Float -> Int -> PERBuffer Tensor
-
--- | Push new memories in a Buffer
-perPush :: PERBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> PERBuffer Tensor
-
--- | Syntactic Sugar for adding one buffer to another
-perPush' :: PERBuffer Tensor -> PERBuffer Tensor -> PERBuffer Tensor
-
--- | Take a prioritized sample from the Buffer
-perSample :: PERBuffer Tensor -> Int -> Int -> IO (ReplayBuffer Tensor, Tensor, Tensor)
-
--- | Update the Priorities of a Buffer
-perUpdate :: PERBuffer Tensor -> Tensor -> Tensor -> PERBuffer Tensor
-
--- | Calculate the β exponent at a given frame
-betaByFrame :: Float -> Int -> Int -> Float
+-- | Replay Buffers and Memory Loaders
+module RPB.MEM
 
 -- | Replay Memory
 data ReplayMemory a
@@ -598,7 +565,7 @@ ReplayMemory :: !a -> !a -> !a -> !a -> !a -> !a -> ReplayMemory a
 -- | Terminal Mask
 [memMasks] :: ReplayMemory a -> !a
 
--- | Create a new, empty Buffer on the CPU
+-- | Create a new, empty Buffer on the GPU
 mkMemory :: ReplayMemory Tensor
 
 -- | How many Trajectories are currently stored in memory
@@ -637,20 +604,12 @@ dataLoader :: ReplayMemory Tensor -> Int -> Tensor -> Tensor -> MemoryLoader [Te
 
 -- | How many Trajectories are currently stored in memory
 loaderLength :: MemoryLoader [Tensor] -> Int
-instance GHC.Classes.Eq RPB.Buffer
-instance GHC.Show.Show RPB.Buffer
-instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.ReplayBuffer a)
-instance GHC.Show.Show a => GHC.Show.Show (RPB.ReplayBuffer a)
-instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.PERBuffer a)
-instance GHC.Show.Show a => GHC.Show.Show (RPB.PERBuffer a)
-instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.ReplayMemory a)
-instance GHC.Show.Show a => GHC.Show.Show (RPB.ReplayMemory a)
-instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.MemoryLoader a)
-instance GHC.Show.Show a => GHC.Show.Show (RPB.MemoryLoader a)
-instance GHC.Base.Functor RPB.MemoryLoader
-instance GHC.Base.Functor RPB.ReplayMemory
-instance GHC.Base.Functor RPB.PERBuffer
-instance GHC.Base.Functor RPB.ReplayBuffer
+instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.MEM.ReplayMemory a)
+instance GHC.Show.Show a => GHC.Show.Show (RPB.MEM.ReplayMemory a)
+instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.MEM.MemoryLoader a)
+instance GHC.Show.Show a => GHC.Show.Show (RPB.MEM.MemoryLoader a)
+instance GHC.Base.Functor RPB.MEM.MemoryLoader
+instance GHC.Base.Functor RPB.MEM.ReplayMemory
 
 
 -- | Proximal Policy Optimization Algorithm
@@ -731,6 +690,113 @@ instance GHC.Show.Show PPO.Agent
 instance GHC.Generics.Generic PPO.Agent
 instance Torch.NN.Randomizable PPO.CriticNetSpec PPO.CriticNet
 instance Torch.NN.Randomizable PPO.ActorNetSpec PPO.ActorNet
+
+
+-- | Replay Buffers and Memory Loaders
+module RPB.RPB
+
+-- | Strict Simple/Naive Replay Buffer
+data ReplayBuffer a
+ReplayBuffer :: !a -> !a -> !a -> !a -> !a -> ReplayBuffer a
+
+-- | States
+[rpbStates] :: ReplayBuffer a -> !a
+
+-- | Actions
+[rpbActions] :: ReplayBuffer a -> !a
+
+-- | Rewards
+[rpbRewards] :: ReplayBuffer a -> !a
+
+-- | Next States
+[rpbStates'] :: ReplayBuffer a -> !a
+
+-- | Terminal Mask
+[rpbDones] :: ReplayBuffer a -> !a
+
+-- | Create a new, empty Buffer on the GPU
+mkBuffer :: ReplayBuffer Tensor
+
+-- | How many Trajectories are currently stored in memory
+bufferLength :: ReplayBuffer Tensor -> Int
+
+-- | Push new memories into Buffer
+bufferPush :: Int -> ReplayBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> ReplayBuffer Tensor
+
+-- | Push one buffer into another one
+bufferPush' :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+
+-- | Pop numElems from Buffer
+bufferPop :: Int -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+
+-- | Get the given indices from Buffer
+bufferSample :: Tensor -> ReplayBuffer Tensor -> ReplayBuffer Tensor
+
+-- | Uniform random sample from Replay Buffer
+bufferRandomSample :: Int -> ReplayBuffer Tensor -> IO (ReplayBuffer Tensor)
+instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.RPB.ReplayBuffer a)
+instance GHC.Show.Show a => GHC.Show.Show (RPB.RPB.ReplayBuffer a)
+instance GHC.Base.Functor RPB.RPB.ReplayBuffer
+
+
+-- | Replay Buffers and Memory Loaders
+module RPB.PER
+
+-- | Strict Prioritized Experience Replay Buffer
+data PERBuffer a
+PERBuffer :: ReplayBuffer a -> !Tensor -> !Int -> !Float -> !Float -> !Int -> PERBuffer a
+
+-- | Actual Buffer
+[perMemories] :: PERBuffer a -> ReplayBuffer a
+
+-- | Sample Weights
+[perPriorities] :: PERBuffer a -> !Tensor
+
+-- | Buffer Capacity
+[perCapacity] :: PERBuffer a -> !Int
+
+-- | Exponent Alpha
+[perAlpha] :: PERBuffer a -> !Float
+
+-- | Initial Exponent Beta
+[perBetaStart] :: PERBuffer a -> !Float
+
+-- | Beta Decay
+[perBetaFrames] :: PERBuffer a -> !Int
+
+-- | Create an empty PER Buffer
+mkPERBuffer :: Int -> Float -> Float -> Int -> PERBuffer Tensor
+
+-- | Push new memories in a Buffer
+perPush :: PERBuffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> PERBuffer Tensor
+
+-- | Syntactic Sugar for adding one buffer to another
+perPush' :: PERBuffer Tensor -> PERBuffer Tensor -> PERBuffer Tensor
+
+-- | Take a prioritized sample from the Buffer
+perSample :: PERBuffer Tensor -> Int -> Int -> IO (ReplayBuffer Tensor, Tensor, Tensor)
+
+-- | Update the Priorities of a Buffer
+perUpdate :: PERBuffer Tensor -> Tensor -> Tensor -> PERBuffer Tensor
+
+-- | Calculate the β exponent at a given frame
+betaByFrame :: Float -> Int -> Int -> Float
+instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.PER.PERBuffer a)
+instance GHC.Show.Show a => GHC.Show.Show (RPB.PER.PERBuffer a)
+instance GHC.Base.Functor RPB.PER.PERBuffer
+
+
+-- | Replay Buffers and Memory Loaders
+module RPB.ERE
+
+-- | Calculate ERE Sampling range cK
+ereSamplingRange :: Int -> Int -> Int -> Int -> Float -> Int
+
+-- | Sample for buffer within ERE range
+ereSample :: ReplayBuffer Tensor -> Int -> Int -> Int -> Int -> Int -> Float -> IO (ReplayBuffer Tensor)
+
+-- | ERE η Annealing during training
+ereAnneal :: Float -> Float -> Int -> Int -> Float
 
 
 -- | Soft Actor Critic Algorithm Defaults
@@ -1043,6 +1109,9 @@ wInit :: Float
 
 -- | Betas
 β2 :: Float
+
+-- | Replay Buffer Type
+bufferType :: Buffer
 
 -- | Replay Buffer Size
 bufferSize :: Int
