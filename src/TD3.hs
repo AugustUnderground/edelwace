@@ -26,7 +26,8 @@ module TD3 ( algorithm
            ) where
 
 import Lib
-import RPB
+import RPB.RPB
+import RPB.HER
 import TD3.Defaults
 import MLFlow       (TrackingURI)
 
@@ -195,7 +196,8 @@ addNoise t action = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> IO Agent
+updateStep :: Int -> Int -> Agent -> Tracker -> ReplayBuffer T.Tensor 
+           -> IO Agent
 updateStep _ 0 agent _ _ = pure agent
 updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
     ε <- normal μ' σ'
@@ -255,7 +257,8 @@ updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
     s'     = rpbStates'
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int -> IO Agent
+updatePolicy :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int 
+             -> IO Agent
 updatePolicy iteration agent tracker buffer epochs = do
     memories <- bufferRandomSample batchSize buffer
     updateStep iteration epochs agent tracker memories

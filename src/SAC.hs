@@ -29,6 +29,9 @@ module SAC ( algorithm
 
 import Lib
 import RPB
+import RPB.RPB
+import RPB.PER
+import RPB.ERE
 import SAC.Defaults
 import qualified Normal                           as D
 
@@ -218,15 +221,13 @@ act Agent{..} s = do
 -- | Get an action and log probs (grad)
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
 evaluate Agent{..} s εN = do
-    -- z' <- D.sample n []
-    -- ε <- normal' [1]
-    ε <- toFloatGPU <$> T.randnLikeIO μ
+    -- ε <- toFloatGPU <$> T.randnLikeIO μ                    -- kinda works
+    -- ε <- toFloatGPU <$> T.randnIO' [head . T.shape $ μ, 1] -- 
+    ε <- toFloatGPU <$> T.randnIO' [(!!1) . T.shape $ μ]   -- let's see
     let a' = μ + σ * ε
         a  = T.tanh a'
         l1 = D.logProb n a'
-        -- l1 = D.logProb n z'
         l2 = T.log . T.abs $ 1.0 - T.pow (2.0 :: Float) a + εN
-        -- l2 = T.log . T.abs $ 1.0 - (a * a) + εN
         -- p  = T.meanDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
         p  = T.sumDim (T.Dim 1) T.KeepDim T.Float $ l1 - l2
     pure (a,p)
@@ -367,7 +368,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηq
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
     
-    when (verbose && epoch `mod` 4 == 0) do
+    when (verbose && (bufferType == RPB || epoch `mod` 4 == 0)) do
         putStrLn $ "\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tQ2 Loss:\t" ++ show jQ2
 
@@ -380,7 +381,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
         updateAlpha = do
             logπ_t0 <- T.clone logπ_t0' >>= T.detach
             let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
-            when (verbose && epoch `mod` 4 == 0) do
+            when (verbose && (bufferType == RPB || epoch `mod` 4 == 0)) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
             T.runStep αLog αOptim jα ηα
@@ -388,7 +389,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@ReplayBuffer{..} 
         updateActor = do
             q_t0' <- T.detach $ q' θ1 θ2 s_t0 a_t0'
             let jπ = T.mean $ (α' * logπ_t0') - q_t0'
-            when (verbose && epoch `mod` 8 == 0) do
+            when (verbose && (bufferType == RPB || epoch `mod` 4 == 0)) do
                 putStrLn $ "\tπ  Loss:\t" ++ show jπ
             _ <- trackLoss tracker iteration "policy" (T.asValue jπ :: Float)
             T.runStep φ φOptim jπ ηπ

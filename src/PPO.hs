@@ -24,7 +24,7 @@ module PPO ( algorithm
            ) where
 
 import Lib
-import RPB
+import RPB.MEM
 import PPO.Defaults
 import qualified Normal                           as D
 import MLFlow           (TrackingURI)
