@@ -5,8 +5,9 @@ module TD3.Defaults where
 
 import Lib
 import RPB
+import qualified RPB.HER as HER
 
-import qualified Torch as T
+import qualified Torch   as T
 
 ------------------------------------------------------------------------------
 --  General Default Settings
@@ -108,11 +109,25 @@ wInit = 3.0e-3
 ------------------------------------------------------------------------------
 
 -- | Replay Buffer Type
-bufferType :: Buffer
-bufferType    = HER
+bufferType :: BufferType
+bufferType       = HER
 -- | Replay Buffer Size
 bufferSize :: Int
-bufferSize    = round (1.0e6 :: Float)
+bufferSize       = round (1.0e6 :: Float)
 -- | Initial sample collecting period
 warmupPeriode :: Int
-warmupPeriode = 50
+warmupPeriode    = 50
+
+------------------------------------------------------------------------------
+-- Hindsight Experience Replay Settings
+------------------------------------------------------------------------------
+
+-- | Target Sampling Strategy
+samplingStrategy :: HER.Strategy
+samplingStrategy = HER.Future
+-- | Number of Additional Targets to sample
+k :: Int 
+k = 4
+-- | Error Tolerance for Target / Reward Calculation
+relTol :: T.Tensor
+relTol = toTensor (1.0e-3 :: Float)

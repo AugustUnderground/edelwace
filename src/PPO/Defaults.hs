@@ -4,6 +4,7 @@
 module PPO.Defaults where
 
 import Lib
+import RPB
 
 import qualified Torch as T
 
@@ -17,6 +18,9 @@ algorithm     = "ppo"
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True
+-- | Replay Buffer Type
+bufferType :: BufferType
+bufferType    = MEM
 -- | Number of episodes to play
 numEpisodes :: Int
 numEpisodes   = 666

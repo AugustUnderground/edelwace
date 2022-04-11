@@ -26,13 +26,15 @@ module TD3 ( algorithm
            ) where
 
 import Lib
-import RPB.RPB
-import RPB.HER
 import TD3.Defaults
+import RPB
+import qualified RPB.RPB  as RPB
+import qualified RPB.HER  as HER
 import MLFlow       (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
+import qualified Data.Set as S
 import qualified Torch    as T
 import qualified Torch.NN as NN
 
@@ -183,6 +185,7 @@ addNoise :: Int -> T.Tensor -> IO T.Tensor
 addNoise t action = do
     ε <- (σ' *) <$> normal' [l]
     let action' = T.clamp (- 1.0) 1.0 (action + ε)
+    -- let action' = T.tanh $ action + ε
     pure action'
   where
     l  = T.shape action !! 1
@@ -196,10 +199,10 @@ addNoise t action = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Agent -> Tracker -> ReplayBuffer T.Tensor 
+updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor 
            -> IO Agent
 updateStep _ 0 agent _ _ = pure agent
-updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
+updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     ε <- normal μ' σ'
     let a' = π φ' s' + ε
     y <- T.detach $ r + γ * q' θ1' θ2' s' a'
@@ -248,26 +251,26 @@ updateStep iteration epoch Agent{..} tracker buffer@ReplayBuffer{..} = do
 
     updateStep iteration epoch' agent' tracker buffer
   where
-    μ'     = T.zerosLike rpbActions
+    μ'     = T.zerosLike actions
     σ'     = T.onesLike μ' * σ
     epoch' = epoch - 1
-    s      = rpbStates
-    a      = rpbActions
-    r      = rpbRewards
-    s'     = rpbStates'
+    s      = states
+    a      = actions
+    r      = rewards
+    s'     = states'
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Agent -> Tracker -> ReplayBuffer T.Tensor -> Int 
+updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
              -> IO Agent
 updatePolicy iteration agent tracker buffer epochs = do
-    memories <- bufferRandomSample batchSize buffer
+    memories <- RPB.sampleIO batchSize buffer
     updateStep iteration epochs agent tracker memories
 
--- | Evaluate Policy
-evaluatePolicy :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
-               -> ReplayBuffer T.Tensor -> IO (ReplayBuffer T.Tensor, T.Tensor)
-evaluatePolicy _ 0 _ _ _ states buffer = pure (buffer, states)
-evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
+-- | Evaluate Policy for usually just one step and a pre-determined warmup Period
+evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
+               -> RPB.Buffer T.Tensor -> IO (RPB.Buffer T.Tensor, T.Tensor)
+evaluatePolicyRPB _ 0 _ _ _ states buffer = pure (buffer, states)
+evaluatePolicyRPB iteration step agent@Agent{..} envUrl tracker states buffer = do
 
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
@@ -286,7 +289,7 @@ evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
                    then flip processGace keys <$> resetPool' envUrl dones
                    else pure $ processGace states'' keys
 
-    let buffer' = bufferPush bufferSize buffer states actions rewards states' dones
+    let buffer' = RPB.push bufferSize buffer states actions rewards states' dones
 
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
@@ -296,39 +299,124 @@ evaluatePolicy iteration step agent@Agent{..} envUrl tracker states buffer = do
         putStrLn $ "\tEnvironments " ++ " done after " ++ show iteration 
                 ++ " iterations, resetting:\n\t\t" ++ show de
 
-    evaluatePolicy iteration step' agent envUrl tracker states' buffer'
+    evaluatePolicyRPB iteration step' agent envUrl tracker states' buffer'
   where
     step'   = step - 1
 
--- | Run Twin Delayed Deep Deterministic Policy Gradient Training
-runAlgorithm :: Int -> Agent -> HymURL -> Tracker -> Bool -> ReplayBuffer T.Tensor
-             -> T.Tensor -> IO Agent
-runAlgorithm _ agent _ _ True _ _ = pure agent
-runAlgorithm iteration agent envUrl tracker _ buffer states = do
+-- | Evaluate Policy until all envs are done at least once
+evaluatePolicyHER :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
+                  -> Tracker -> T.Tensor -> T.Tensor -> HER.Buffer T.Tensor 
+                  -> IO (HER.Buffer T.Tensor)
+evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker 
+                  states targets buffer | S.size done == numEnvs = pure buffer
+    -- foldM (\b b' -> HER.push' bufferSize b 
+    --             <$> HER.sampleTargets samplingStrategy k relTol b') 
+    --       buffer (HER.envSplit numEnvs buffer)
+                                        | otherwise              = do
+    actions <- (addNoise iteration . π φ $ T.cat (T.Dim 1) [states, targets]) 
+                    >>= T.detach
+    
+    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
+
+    let done'   = S.union done . S.fromList . T.asValue . T.squeezeAll 
+                . T.nonzero . T.squeezeAll $ dones
+        keys    = head infos
+        (states', _, targets') = processGace'' states'' keys
+        buffer' = HER.push bufferSize buffer states actions rewards states'
+                           dones targets targets'
+
+    _ <- trackReward tracker iteration rewards
+    when (even step) do
+        _ <- trackEnvState tracker envUrl step
+        pure ()
+
+    when (verbose && step `mod` 10 == 0) do
+        putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
+
+    evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
+                      states' targets buffer'
+  where
+    step' = step + 1
+
+-- | Run Twin Delayed Deep Deterministic Policy Gradient Training with RPB
+runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
+                -> RPB.Buffer T.Tensor -> T.Tensor -> IO Agent
+runAlgorithmRPB _ agent _ _ True _ _ = pure agent
+runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
 
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
-    (!memories', !states') <- evaluatePolicy iteration numSteps agent envUrl 
-                                             tracker states buffer
+    (!memories', !states') <- evaluatePolicyRPB iteration numSteps agent envUrl 
+                                                tracker states buffer
 
-    let buffer' = bufferPush' bufferSize buffer memories'
+    let buffer' = RPB.push' bufferSize buffer memories'
 
-    !agent' <- if bufferLength buffer' < batchSize 
+    !agent' <- if RPB.size buffer' < batchSize 
                   then pure agent
                   else updatePolicy iteration agent tracker buffer' numEpochs
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
-    let meanReward = T.mean . rpbRewards $ memories'
+    let meanReward = T.mean . RPB.rewards $ memories'
         stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
         done'      = (iteration >= numIterations) || stop
 
-    runAlgorithm iteration' agent' envUrl tracker done' buffer' states'
+    runAlgorithmRPB iteration' agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ algorithm
+
+-- | Run Twin Delayed Deep Deterministic Policy Gradient Training with HER
+runAlgorithmHER :: Int -> Agent -> HymURL -> Tracker -> Bool 
+                -> HER.Buffer T.Tensor -> T.Tensor -> T.Tensor -> IO Agent
+runAlgorithmHER _ agent _ _ True _ _ _ = pure agent
+runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
+
+    when verbose do
+        putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
+
+    numEnvs <- numEnvsPool envUrl
+    buf'    <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
+                                 tracker states targets episodeBuffer
+
+    buffer' <- if samplingStrategy == HER.Random
+                  then HER.sampleTargets HER.Random k relTol 
+                            $ HER.push' bufferSize buffer buf'
+                  else HER.push' bufferSize buffer 
+                           <$> foldM (\b b' -> HER.push' bufferSize b 
+                                           <$> HER.sampleTargets samplingStrategy 
+                                                                 k relTol b') 
+                                     buf' (HER.envSplit numEnvs buf')
+
+    let buf = HER.asRPB buffer'
+    !agent' <- updatePolicy iteration agent tracker buf numEpochs
+
+    when (iteration `mod` 10 == 0) do
+        saveAgent ptPath agent 
+
+    states'' <- toFloatGPU <$> resetPool envUrl
+    keys     <- infoPool envUrl
+    targets' <- targetPool envUrl
+
+    let !states' = processGace states'' keys
+
+    runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
+  where
+    done'         = iteration >= numIterations
+    episodeBuffer = HER.mkBuffer
+    iteration'    = iteration + 1
+    ptPath        = "./models/" ++ algorithm
+
+-- | Handle training for different replay buffer types
+train' :: HymURL -> Tracker -> BufferType -> T.Tensor -> Agent -> IO Agent
+train' envUrl tracker RPB states agent = 
+    runAlgorithmRPB 0 agent envUrl tracker False RPB.mkBuffer states 
+train' envUrl tracker HER states agent = do
+    targets <- targetPool envUrl
+    runAlgorithmHER 0 agent envUrl tracker False HER.mkBuffer targets states 
+train' _ _ _ _ _ = undefined
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
@@ -340,10 +428,8 @@ train obsDim actDim envUrl trackingUri = do
     keys    <- infoPool envUrl
 
     let !states = processGace states' keys
-        buffer  = mkBuffer
 
-    !agent <- mkAgent obsDim actDim >>= 
-        (\agent' -> runAlgorithm 0 agent' envUrl tracker False buffer states)
+    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
     createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker

@@ -12,20 +12,20 @@
 -- | Utility and Helper functions for EDELWACE
 module Lib where
 
-import Data.Char             (isLower)
-import Data.List             (isInfixOf, isPrefixOf, isSuffixOf, elemIndex)
-import Data.Maybe            (fromJust)
 import Data.Aeson
-import Network.Wreq
+import Data.Char             (isLower)
+import Data.List
+import Data.Maybe            (fromJust)
+import Data.Time.Clock.POSIX (getPOSIXTime)
+import Data.Time.Clock       (getCurrentTime)
+import Data.Time.Format      (formatTime, defaultTimeLocale)
 import Control.Lens
 import Control.Monad
 import GHC.Generics
 import GHC.Float             (float2Double)
 import Numeric.Limits        (maxValue, minValue)
-import Data.Time.Clock.POSIX (getPOSIXTime)
-import Data.Time.Clock       (getCurrentTime)
-import Data.Time.Format      (formatTime, defaultTimeLocale)
 import System.Directory
+import Network.Wreq
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString           as BS hiding (pack)
@@ -89,6 +89,14 @@ both f = either f f
 both' :: (a -> b) -> Either a a -> Either b b
 both' f (Right e) = Right (f e)
 both' f (Left e)  = Left (f e)
+
+-- | Range from 0 to n - 1
+range :: Int -> [Int]
+range n = [0 .. (n - 1)]
+
+-- | First of triple
+fst' :: (a,b,c) -> a
+fst' (a,_,_) = a
 
 ------------------------------------------------------------------------------
 -- File System
@@ -441,6 +449,12 @@ infoPool url = do
     act <- actKeysPool url
     return (Info obs act)
 
+-- | Get Targets for all envs in Pool
+targetPool :: HymURL -> IO  T.Tensor
+targetPool url = toTensor . map M.elems . M.elems <$> hymPoolMap url targetRoute
+  where
+    targetRoute = "target"
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
@@ -480,6 +494,61 @@ boolMask :: Int -> [Int] -> T.Tensor
 boolMask len idx = mask
   where
     mask = T.toDType T.Bool . toTensor $ map (`elem` idx) [0 .. (len - 1)]
+
+-- | Create a Boolean Mask Tensor from index Tensor
+boolMask' :: Int -> T.Tensor -> T.Tensor
+boolMask' len idx = mask
+  where
+    idx' = T.squeezeAll idx
+    mask = T.anyDim (T.Dim 0) False 
+         $ T.eq (T.arange' 0 len 1) (T.reshape [-1,1] idx')
+
+-- | Process for HER returns processed observations, the target and the
+-- augmented target
+processGace'' :: T.Tensor -> Info -> (T.Tensor, T.Tensor, T.Tensor)
+processGace'' obs Info{..} =  (states, target, target')
+  where
+    k2i      = T.toDType T.Int32 . toTensor 
+             . map (fromJust . flip elemIndex observations)
+    keys   = filter (\k -> (  (k `elem` actions) 
+                           || (isLower . head $ k) 
+                           || (k == "A") )
+                          -- && not ("target_" `isPrefixOf` k) 
+                          && not ("delta_"  `isPrefixOf` k) 
+                          && not ("vn_"     `isPrefixOf` k)
+                          && not ("v_"      `isPrefixOf` k)
+                          && not ("steps"   `isInfixOf`  k) 
+                          &&     ("iss"         /=       k) 
+                          &&     ("idd"         /=       k)
+                    ) observations
+    idx      = k2i keys
+    idxObs   = k2i $ filter (not . ("target_" `isPrefixOf`)) keys
+    keyTgt   = filter ("target_" `isPrefixOf`) keys
+    idxTgt   = k2i keyTgt
+    idxTgt'  = k2i $ map (fromJust . stripPrefix "target_") keyTgt
+    idxI     = map    (fromJust . flip elemIndex keys)
+             . filter (\i -> ("i_" `isInfixOf` i) || (":id" `isSuffixOf` i)) 
+             $ keys
+    mskI     = boolMask (length keys) idxI
+    frqs     = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
+    idxF     = map    (fromJust . flip elemIndex keys) 
+             . filter (\f -> any (`isInfixOf` f) frqs || (":fug" `isSuffixOf` f)) 
+             $ keys
+    mskF     = boolMask (length keys) idxF
+    idxV     = map    (fromJust . flip elemIndex keys) 
+             . filter ("voff_" `isPrefixOf`) 
+             $ keys
+    mskV     = boolMask (length keys) idxV
+    mskA     = boolMask (length keys) [fromJust $ elemIndex "A" keys]
+    obs1     = T.indexSelect 1 idx obs
+    obs2     = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
+    obs3     = T.where' mskI (obs2 * 1.0e6)  obs2
+    obs4     = T.where' mskV (obs3 * 1.0e3)  obs3
+    obs5     = T.where' mskA (obs4 * 1.0e10) obs4
+    obs'     = nanToNum'' obs5
+    states   = T.indexSelect 1 idxObs  obs'
+    target   = T.indexSelect 1 idxTgt  obs'
+    target'  = T.indexSelect 1 idxTgt' obs'
 
 -- | Standardize state over all parallel envs
 processGace' :: T.Tensor -> Info -> T.Tensor

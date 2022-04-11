@@ -19,7 +19,7 @@ algorithm     = "sac"
 verbose :: Bool
 verbose       = True
 -- | Replay Buffer Type
-bufferType :: Buffer
+bufferType :: BufferType
 bufferType    = RPB
 -- | How many steps to take in env
 numSteps :: Int
@@ -77,12 +77,12 @@ aceVariant = 0
 εNoise      = toTensor (1.0e-6 :: Float)
 -- | Whether temperature coefficient is fixed or learned (see αInit)
 αLearned :: Bool
-αLearned    = True
+αLearned    = False
 -- | Temperature Coefficient
 αInit :: T.Tensor
-αInit      = if αLearned 
-                then toTensor (0.0 :: Float)
-                else T.log $ toTensor (0.036 :: Float) -- 0.2
+αInit       = if αLearned 
+                 then toTensor (0.0 :: Float)
+                 else T.log $ toTensor (0.2 :: Float) -- 0.036
 -- | Lower Variance Clipping
 σMin :: Float
 σMin        = -2.0
