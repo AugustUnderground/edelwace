@@ -309,12 +309,11 @@ evaluatePolicyHER :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL
                   -> IO (HER.Buffer T.Tensor)
 evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker 
                   states targets buffer | S.size done == numEnvs = pure buffer
-    -- foldM (\b b' -> HER.push' bufferSize b 
-    --             <$> HER.sampleTargets samplingStrategy k relTol b') 
-    --       buffer (HER.envSplit numEnvs buffer)
                                         | otherwise              = do
-    actions <- (addNoise iteration . π φ $ T.cat (T.Dim 1) [states, targets]) 
-                    >>= T.detach
+
+    actions <- forM [states, targets] (T.detach >=> T.clone) 
+                >>= addNoise iteration . π φ . T.cat (T.Dim 1)
+                >>= T.detach
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
@@ -398,7 +397,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     states'' <- toFloatGPU <$> resetPool envUrl
     keys     <- infoPool envUrl
-    targets' <- targetPool envUrl
+    targets' <- targetPool' envUrl
 
     let !states' = processGace states'' keys
 
@@ -410,13 +409,18 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     ptPath        = "./models/" ++ algorithm
 
 -- | Handle training for different replay buffer types
-train' :: HymURL -> Tracker -> BufferType -> T.Tensor -> Agent -> IO Agent
-train' envUrl tracker RPB states agent = 
+train' :: HymURL -> Tracker -> BufferType -> Agent -> IO Agent
+train' envUrl tracker RPB agent = do
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    let !states = processGace states' keys
     runAlgorithmRPB 0 agent envUrl tracker False RPB.mkBuffer states 
-train' envUrl tracker HER states agent = do
-    targets <- targetPool envUrl
+train' envUrl tracker HER agent = do
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    let (states, targets, _) = processGace'' states' keys
     runAlgorithmHER 0 agent envUrl tracker False HER.mkBuffer targets states 
-train' _ _ _ _ _ = undefined
+train' _ _ _ _ = undefined
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
@@ -424,12 +428,7 @@ train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
 
-    states' <- toFloatGPU <$> resetPool envUrl
-    keys    <- infoPool envUrl
-
-    let !states = processGace states' keys
-
-    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
+    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
     createModelArchiveDir algorithm >>= (`saveAgent` agent)
 
     endRuns' tracker

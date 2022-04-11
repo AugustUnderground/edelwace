@@ -273,6 +273,9 @@ infoPool :: HymURL -> IO Info
 -- | Get Targets for all envs in Pool
 targetPool :: HymURL -> IO Tensor
 
+-- | Get Targets for all envs in Pool and process them
+targetPool' :: HymURL -> IO Tensor
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> Tensor -> IO (Tensor, Tensor, Tensor, [Info])
 
@@ -296,6 +299,9 @@ boolMask :: Int -> [Int] -> Tensor
 
 -- | Create a Boolean Mask Tensor from index Tensor
 boolMask' :: Int -> Tensor -> Tensor
+
+-- | Process Targets for HER
+processTarget :: Map Int (Map String Float) -> Tensor
 
 -- | Process for HER returns processed observations, the target and the
 --   augmented target

@@ -450,8 +450,14 @@ infoPool url = do
     return (Info obs act)
 
 -- | Get Targets for all envs in Pool
-targetPool :: HymURL -> IO  T.Tensor
+targetPool :: HymURL -> IO T.Tensor
 targetPool url = toTensor . map M.elems . M.elems <$> hymPoolMap url targetRoute
+  where
+    targetRoute = "target"
+
+-- | Get Targets for all envs in Pool and process them
+targetPool' :: HymURL -> IO T.Tensor
+targetPool' url = processTarget <$>  hymPoolMap url targetRoute
   where
     targetRoute = "target"
 
@@ -503,14 +509,35 @@ boolMask' len idx = mask
     mask = T.anyDim (T.Dim 0) False 
          $ T.eq (T.arange' 0 len 1) (T.reshape [-1,1] idx')
 
+-- | Process Targets for HER
+processTarget :: M.Map Int (M.Map String Float) -> T.Tensor
+processTarget targetMap = tgt4
+  where
+    keys = M.keys . head . M.elems $ targetMap
+    tgt0 = toTensor . map M.elems . M.elems $ targetMap
+    frqs = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
+    mskF = boolMask (length keys)
+         . map    (fromJust . flip elemIndex keys) 
+         . filter (\f -> any (`isInfixOf` f) frqs) 
+         $ keys
+    mskV = boolMask (length keys) 
+         . map    (fromJust . flip elemIndex keys) 
+         . filter ("voff_" `isPrefixOf`) 
+         $ keys
+    mskA = boolMask (length keys) [fromJust $ elemIndex "A" keys]
+    tgt1 = T.where' mskF (T.log10 . T.abs $ tgt0) tgt0 
+    tgt2 = T.where' mskV (tgt1 * 1.0e3)  tgt1
+    tgt3 = T.where' mskA (tgt2 * 1.0e10) tgt2
+    tgt4   = nanToNum'' tgt3
+
 -- | Process for HER returns processed observations, the target and the
 -- augmented target
 processGace'' :: T.Tensor -> Info -> (T.Tensor, T.Tensor, T.Tensor)
-processGace'' obs Info{..} =  (states, target, target')
+processGace'' obs Info{..} = (states, target, target')
   where
-    k2i      = T.toDType T.Int32 . toTensor 
-             . map (fromJust . flip elemIndex observations)
-    keys   = filter (\k -> (  (k `elem` actions) 
+    k2i kl    = T.toDType T.Int32 . toTensor 
+              . map (fromJust . flip elemIndex kl)
+    keys    = filter (\k -> (  (k `elem` actions) 
                            || (isLower . head $ k) 
                            || (k == "A") )
                           -- && not ("target_" `isPrefixOf` k) 
@@ -521,34 +548,34 @@ processGace'' obs Info{..} =  (states, target, target')
                           &&     ("iss"         /=       k) 
                           &&     ("idd"         /=       k)
                     ) observations
-    idx      = k2i keys
-    idxObs   = k2i $ filter (not . ("target_" `isPrefixOf`)) keys
-    keyTgt   = filter ("target_" `isPrefixOf`) keys
-    idxTgt   = k2i keyTgt
-    idxTgt'  = k2i $ map (fromJust . stripPrefix "target_") keyTgt
-    idxI     = map    (fromJust . flip elemIndex keys)
-             . filter (\i -> ("i_" `isInfixOf` i) || (":id" `isSuffixOf` i)) 
-             $ keys
-    mskI     = boolMask (length keys) idxI
-    frqs     = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
-    idxF     = map    (fromJust . flip elemIndex keys) 
-             . filter (\f -> any (`isInfixOf` f) frqs || (":fug" `isSuffixOf` f)) 
-             $ keys
-    mskF     = boolMask (length keys) idxF
-    idxV     = map    (fromJust . flip elemIndex keys) 
-             . filter ("voff_" `isPrefixOf`) 
-             $ keys
-    mskV     = boolMask (length keys) idxV
-    mskA     = boolMask (length keys) [fromJust $ elemIndex "A" keys]
-    obs1     = T.indexSelect 1 idx obs
-    obs2     = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
-    obs3     = T.where' mskI (obs2 * 1.0e6)  obs2
-    obs4     = T.where' mskV (obs3 * 1.0e3)  obs3
-    obs5     = T.where' mskA (obs4 * 1.0e10) obs4
-    obs'     = nanToNum'' obs5
-    states   = T.indexSelect 1 idxObs  obs'
-    target   = T.indexSelect 1 idxTgt  obs'
-    target'  = T.indexSelect 1 idxTgt' obs'
+    idx     = k2i observations keys
+    idxObs  = k2i keys $ filter (not . ("target_" `isPrefixOf`)) keys
+    keyTgt  = filter ("target_" `isPrefixOf`) keys
+    idxTgt  = k2i keys keyTgt
+    idxTgt' = k2i keys $ map (fromJust . stripPrefix "target_") keyTgt
+    idxI    = map    (fromJust . flip elemIndex keys)
+            . filter (\i -> ("i_" `isInfixOf` i) || (":id" `isSuffixOf` i)) 
+            $ keys
+    mskI    = boolMask (length keys) idxI
+    frqs    = ["ugbw", "cof", "sr_f", "sr_r"] :: [[Char]]
+    idxF    = map    (fromJust . flip elemIndex keys) 
+            . filter (\f -> any (`isInfixOf` f) frqs || (":fug" `isSuffixOf` f)) 
+            $ keys
+    mskF    = boolMask (length keys) idxF
+    idxV    = map    (fromJust . flip elemIndex keys) 
+            . filter ("voff_" `isPrefixOf`) 
+            $ keys
+    mskV    = boolMask (length keys) idxV
+    mskA    = boolMask (length keys) [fromJust $ elemIndex "A" keys]
+    obs1    = T.indexSelect 1 idx obs
+    obs2    = T.where' mskF (T.log10 . T.abs $ obs1) obs1 
+    obs3    = T.where' mskI (obs2 * 1.0e6)  obs2
+    obs4    = T.where' mskV (obs3 * 1.0e3)  obs3
+    obs5    = T.where' mskA (obs4 * 1.0e10) obs4
+    obs'    = nanToNum'' obs5
+    states  = T.indexSelect 1 idxObs  obs'
+    target  = T.indexSelect 1 idxTgt  obs'
+    target' = T.indexSelect 1 idxTgt' obs'
 
 -- | Standardize state over all parallel envs
 processGace' :: T.Tensor -> Info -> T.Tensor
