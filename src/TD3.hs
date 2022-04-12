@@ -212,22 +212,19 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
         jQ1 = T.mseLoss v1 y
         jQ2 = T.mseLoss v2 y
 
-    when (verbose && iteration `mod` 10 == 0) do
+    when (verbose && epoch `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    _ <- trackLoss tracker (iteration * numEpochs + epoch) 
-                   "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker (iteration * numEpochs + epoch) 
-                   "Q2" (T.asValue jQ2 :: Float)
+    _ <- trackLoss tracker (iter' !! epoch) "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker (iter' !! epoch) "Q2" (T.asValue jQ2 :: Float)
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
 
     let updateActor :: IO (ActorNet, T.Adam)
         updateActor = do
-            when (verbose && iteration `mod` 10 == 0) do
+            when (verbose && epoch `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            _ <- trackLoss tracker (iteration * numEpochs + epoch) 
-                           "policy" (T.asValue jφ :: Float)
+            _ <- trackLoss tracker (iter' !! epoch) "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
@@ -253,6 +250,7 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
 
     updateStep iteration epoch' agent' tracker buffer
   where
+    iter'  = reverse [(iteration * numEpochs) .. (iteration * numEpochs + numEpochs)]
     μ'     = T.zerosLike actions
     σ'     = T.onesLike μ' * σ
     epoch' = epoch - 1
@@ -282,7 +280,7 @@ evaluatePolicyRPB iteration step agent@Agent{..} envUrl tracker states buffer = 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
     _ <- trackReward tracker iteration rewards
-    when (iteration `mod` 8 == 0) do
+    when (iteration `mod` 4 == 0) do
         _ <- trackEnvState tracker envUrl iteration
         pure ()
 
@@ -322,13 +320,20 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
     let done'   = S.union done . S.fromList . T.asValue . T.squeezeAll 
                 . T.nonzero . T.squeezeAll $ dones
         keys    = head infos
-        (states', _, targets') = processGace'' states'' keys
-        buffer' = HER.push bufferSize buffer states actions rewards states'
-                           dones targets targets'
 
-    _ <- trackReward tracker (iteration * numSteps + step) rewards
+    (states', targets', targets'') <- if T.any dones 
+           then flip   processGace'' keys <$> resetPool' envUrl dones
+           else pure $ processGace'' states'' keys
+
+
+    let buffer' = HER.push bufferSize buffer states actions rewards states'
+                           dones targets' targets''
+
+    print $ fmap T.shape buffer'
+
+    _ <- trackReward tracker (iter' !! step) rewards
     when (even step) do
-        _ <- trackEnvState tracker envUrl (iteration * numSteps + step)
+        _ <- trackEnvState tracker envUrl (iter' !! step)
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
@@ -336,9 +341,10 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
                              ++ show (T.mean rewards)
 
     evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
-                      states' targets buffer'
+                      states' targets' buffer'
   where
     step' = step + 1
+    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training with RPB
 runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
@@ -381,7 +387,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     numEnvs <- numEnvsPool envUrl
     buf'    <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
-                                 tracker states targets episodeBuffer
+                                 tracker states targets buffer
 
     buffer' <- if strategy == HER.Random
                   then HER.sampleTargets HER.Random k relTol 
@@ -392,26 +398,17 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     let buf = HER.asRPB buffer'
     
-    print $ fmap T.shape buffer
-    print $ fmap T.shape buf'
-    print $ fmap T.shape buffer'
-    print $ fmap T.shape buf
-
     !agent' <- updatePolicy iteration agent tracker buf numEpochs
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
 
-    states'' <- toFloatGPU <$> resetPool envUrl
-    keys     <- infoPool envUrl
-    targets' <- targetPool' envUrl
-
-    let !states' = processGace states'' keys
+    keys <- infoPool envUrl
+    (states', targets', _) <- flip processGace'' keys <$> resetPool envUrl
 
     runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
   where
     done'         = iteration >= numIterations
-    episodeBuffer = HER.mkBuffer
     iteration'    = iteration + 1
     ptPath        = "./models/" ++ show algorithm
 

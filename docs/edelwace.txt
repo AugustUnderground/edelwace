@@ -847,6 +847,15 @@ sample :: Tensor -> Buffer Tensor -> Buffer Tensor
 --   give it the entire buffer, not just the episode.
 sampleTargets :: Strategy -> Int -> Tensor -> Buffer Tensor -> IO (Buffer Tensor)
 
+-- | Calculate reward for new targets given a relative tolerance
+newReward :: Tensor -> Tensor -> Tensor -> Tensor
+
+-- | Augment by changing acheived target, done flag and reward
+augmentTarget' :: Tensor -> Tensor -> Buffer Tensor -> Buffer Tensor
+
+-- | Augment targets for given indices
+augmentTarget :: Int -> Tensor -> [Tensor] -> Buffer Tensor -> Buffer Tensor
+
 -- | Convert HER Buffer to RPB for training
 asRPB :: Buffer Tensor -> Buffer Tensor
 instance GHC.Classes.Eq RPB.HER.Strategy
