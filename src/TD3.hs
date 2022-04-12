@@ -329,8 +329,6 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
     let buffer' = HER.push bufferSize buffer states actions rewards states'
                            dones targets' targets''
 
-    print $ fmap T.shape buffer'
-
     _ <- trackReward tracker (iter' !! step) rewards
     when (even step) do
         _ <- trackEnvState tracker envUrl (iter' !! step)
