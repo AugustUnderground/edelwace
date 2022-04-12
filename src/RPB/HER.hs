@@ -13,6 +13,9 @@ module RPB.HER ( Strategy (..)
                , envSplit
                , sample
                , sampleTargets
+               , newReward
+               , augmentTarget'
+               , augmentTarget
                , asRPB
                ) where
 
@@ -123,20 +126,25 @@ newReward relTol obs tgt = rew'
     rew' = T.where' msk (T.full dims (  0.0  :: Float) opts)
                         (T.full dims ((-1.0) :: Float) opts) 
 
+-- | Augment by changing acheived target, done flag and reward
 augmentTarget' :: T.Tensor -> T.Tensor -> Buffer T.Tensor -> Buffer T.Tensor
-augmentTarget' tol tgt (Buffer s a _ n _ _ _) = Buffer s a r' n d' tgt tgt
+augmentTarget' tol tgt (Buffer s a _ n _ _ t') = Buffer s a r' n d' tgt tgt
   where
-    r' = newReward tol n tgt
-    d' = T.ge r' (toTensor (0.0 :: Float))
+    r' = newReward tol t' tgt
+    d' = T.ge r' $ toTensor (0.0 :: Float)
 
-augmentTarget :: Int -> T.Tensor -> [T.Tensor] -> Buffer T.Tensor -> Buffer T.Tensor
+-- | Augment targets for given indices
+augmentTarget :: Int -> T.Tensor -> [T.Tensor] -> Buffer T.Tensor 
+              -> Buffer T.Tensor
 augmentTarget k tol idx buf = buf'
   where
+    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
     tgt' = T.cat (T.Dim 0) 
          $ map (\i -> T.indexSelect 0 i $ targets' buf) idx
     len  = head $ T.shape tgt'
+    idx' = T.arange 0 (size buf - k) 1 opts
     buf' = augmentTarget' tol tgt'
-         $ T.reshape [len, -1] . T.repeat [1,k] <$> buf
+         $ T.reshape [len, -1] . T.repeat [1,k] . T.indexSelect 0 idx' <$> buf
 
 -- | Sample Additional Goals according to Strategy (drop first). `Random` is
 -- basically the same as `Episode` you just have to give it the entire buffer,
@@ -148,36 +156,31 @@ sampleTargets Final _ tol buf@Buffer{..} = pure $ push' cap buf buf'
     bs       = size buf
     idx      = toIntTensor . (:[]) . pred . head . T.shape $ targets'
     tgt'     = T.repeat [bs, 1] $ T.indexSelect 0 idx targets'
-    rewards' = newReward tol states' tgt'
+    rewards' = newReward tol targets' tgt'
     dones'   = T.ge rewards' (toTensor (0.0 :: Float))
     buf'     = Buffer states actions rewards' states' dones' tgt' tgt'
     cap      = bs + size buf'
 sampleTargets Episode k tol buf = do 
-    idx <- map (fst' . T.uniqueDim 0 False True True . T.squeezeAll) 
-         . T.split 1 (T.Dim 0) <$> T.randintIO 0 bs [bs, k] opts
+    idx      <-  map T.squeezeAll .  T.split 1 (T.Dim 0) 
+             <$> T.randintIO 0 bs [bs, k] opts
     let buf' = augmentTarget k tol idx buf
         cap  = bs + size buf'
-    pure $ push' cap buf buf'
+    pure     $ push' cap buf buf'
   where
-    bs   = size buf
-    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+    bs       = size buf
+    opts     = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
 sampleTargets Random k tol buf = sampleTargets Episode k tol buf
 sampleTargets Future k tol buf = do 
-    print $ fmap T.shape buf
-    buf'' <- sampleTargets Final k tol (T.indexSelect 0 idx' <$> buf)
-    print $ fmap T.shape buf''
-    idx   <- forM [0, k .. (bs - k)] 
-                  (\k' -> fst' . T.uniqueDim 0 False True True 
-                      <$> T.randintIO k' bs [k] opts) 
-    print idx
+    buf''    <-  sampleTargets Final k tol 
+              $  T.indexSelect 0 (T.arange (bs - k)    bs    1 opts) 
+             <$> buf
+    idx      <- forM [0 .. (bs - k - 1)] (\k' -> T.randintIO k' bs [k] opts)
     let buf' = augmentTarget k tol idx buf
         cap  = bs + size buf' + size buf''
-    print $ fmap T.shape buf'
-    pure $ foldl (push' cap) buf [buf', buf'']
+    pure     $ foldl (push' cap) buf [buf', buf'']
   where
-    bs   = size buf
-    idx' = T.arange (bs - k) (bs - 1) 1 opts
-    opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+    bs       = size buf
+    opts     = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
 
 -- | Convert HER Buffer to RPB for training
 asRPB :: Buffer T.Tensor -> RPB.Buffer T.Tensor

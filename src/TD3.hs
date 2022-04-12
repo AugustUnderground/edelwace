@@ -390,7 +390,14 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                                    <$> HER.sampleTargets strategy k relTol b') 
                              buffer (HER.envSplit numEnvs buf')
 
-    !agent' <- updatePolicy iteration agent tracker (HER.asRPB buffer') numEpochs
+    let buf = HER.asRPB buffer'
+    
+    print $ fmap T.shape buffer
+    print $ fmap T.shape buf'
+    print $ fmap T.shape buffer'
+    print $ fmap T.shape buf
+
+    !agent' <- updatePolicy iteration agent tracker buf numEpochs
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
