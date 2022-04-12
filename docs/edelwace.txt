@@ -13,6 +13,18 @@
 -- | Utility and Helper functions for EDELWACE
 module Lib
 
+-- | Deep Reinforcement Learning Algorithm
+data Algorithm
+
+-- | Soft Actor-Critic
+SAC :: Algorithm
+
+-- | Twin Delayed Deep Deterministic Policy Gradient
+TD3 :: Algorithm
+
+-- | Proximal Policy Optimization
+PPO :: Algorithm
+
 -- | Swaps the arguments of HaskTorch's foldLoop around
 foldLoop' :: Int -> (a -> Int -> IO a) -> a -> IO a
 
@@ -377,6 +389,7 @@ filterPerformance :: Map Int (Map String Float) -> [String] -> Map Int (Map Stri
 
 -- | Write Current state of the Environment to Trackign Server
 trackEnvState :: Tracker -> HymURL -> Int -> IO ()
+instance GHC.Classes.Eq Lib.Algorithm
 instance GHC.Show.Show Lib.Info
 instance GHC.Generics.Generic Lib.Info
 instance GHC.Show.Show Lib.Step
@@ -388,6 +401,8 @@ instance Data.Aeson.Types.FromJSON.FromJSON Lib.Step
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Step
 instance Data.Aeson.Types.FromJSON.FromJSON Lib.Info
 instance Data.Aeson.Types.ToJSON.ToJSON Lib.Info
+instance GHC.Show.Show Lib.Algorithm
+instance GHC.Read.Read Lib.Algorithm
 
 module Normal
 
@@ -443,7 +458,7 @@ instance GHC.Show.Show RPB.BufferType
 module PPO.Defaults
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Print verbose debug output
 verbose :: Bool
@@ -591,7 +606,7 @@ instance GHC.Base.Functor RPB.MEM.Buffer
 module PPO
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Actor Network Specification
 data ActorNetSpec
@@ -858,7 +873,7 @@ anneal :: Float -> Float -> Int -> Int -> Float
 module SAC.Defaults
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Print verbose debug output
 verbose :: Bool
@@ -976,7 +991,7 @@ cMin :: Int
 module SAC
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Actor Network Specification
 data ActorNetSpec
@@ -1091,7 +1106,7 @@ instance Torch.NN.Randomizable SAC.ActorNetSpec SAC.ActorNet
 module TD3.Defaults
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Print verbose debug output
 verbose :: Bool
@@ -1175,7 +1190,7 @@ bufferSize :: Int
 warmupPeriode :: Int
 
 -- | Target Sampling Strategy
-samplingStrategy :: Strategy
+strategy :: Strategy
 
 -- | Number of Additional Targets to sample
 k :: Int
@@ -1188,7 +1203,7 @@ relTol :: Tensor
 module TD3
 
 -- | Algorithm ID
-algorithm :: String
+algorithm :: Algorithm
 
 -- | Actor Network Specification
 data ActorNetSpec
