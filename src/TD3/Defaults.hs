@@ -54,6 +54,12 @@ aceBackend = "xh035"
 -- | ACE Environment variant
 aceVariant :: Int
 aceVariant  = 0
+-- | Action space lower bound
+actionLow :: Float
+actionLow = - 1.0
+-- | Action space upper bound
+actionHigh :: Float
+actionHigh = 1.0
 
 ------------------------------------------------------------------------------
 --  TD3 Algorithm Hyper Parameters
@@ -93,10 +99,10 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 ηθ :: T.Tensor
-ηθ     = toTensor (1.0e-4 :: Float)
+ηθ     = toTensor (1.0e-3 :: Float)
 -- | Learning Rate
 ηφ :: T.Tensor
-ηφ     = toTensor (1.0e-4 :: Float)
+ηφ     = toTensor (1.0e-3 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
