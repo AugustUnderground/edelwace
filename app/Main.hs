@@ -16,18 +16,19 @@ import Options.Applicative
 
 -- | Run Training
 run :: Args -> IO ()
-run Args{..} | algorithm `notElem` [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
+run Args{..} | notElem algorithm 
+             $ map show [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
                          = error $ "No such algorithm " ++ algorithm
              | otherwise = do
     putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
-    when (algorithm == SAC.algorithm) do
+    when (algorithm == show SAC.algorithm) do
         SAC.train obs act url uri >>= SAC.saveAgent path
  
-    when (algorithm == TD3.algorithm) do
+    when (algorithm == show TD3.algorithm) do
         TD3.train obs act url uri >>= TD3.saveAgent path
  
-    when (algorithm == PPO.algorithm) do
+    when (algorithm == show PPO.algorithm) do
         PPO.train obs act url uri >>= PPO.saveAgent path
 
     putStrLn $ "Training " ++ algorithm ++ " Agent finished."

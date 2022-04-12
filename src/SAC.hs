@@ -600,7 +600,7 @@ runAlgorithmPER iteration agent envUrl tracker _ buffer states = do
     runAlgorithmPER iteration' agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
-    ptPath     = "./models/" ++ algorithm
+    ptPath     = "./models/" ++ show algorithm
 
 -- | Run Soft Actor Critic Training (RPB)
 runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
@@ -631,7 +631,7 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
     runAlgorithmRPB iteration' agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
-    ptPath     = "./models/" ++ algorithm
+    ptPath     = "./models/" ++ show algorithm
 
 runAlgorithmERE :: Int -> Int -> Int -> Agent -> HymURL -> Tracker -> Bool 
                 -> RPB.Buffer T.Tensor -> T.Tensor -> IO Agent
@@ -666,7 +666,7 @@ runAlgorithmERE iteration epochs numEnvs agent envUrl tracker _ buffer states = 
     runAlgorithmERE iteration' epochs' numEnvs agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
-    ptPath     = "./models/" ++ algorithm
+    ptPath     = "./models/" ++ show algorithm
 
 -- | Handle training for different replay buffer types
 train' :: HymURL -> Tracker -> BufferType -> T.Tensor -> Agent -> IO Agent
@@ -685,7 +685,7 @@ train' _ _ _ _ _ = undefined
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
+    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
@@ -693,7 +693,7 @@ train obsDim actDim envUrl trackingUri = do
     let !states = processGace states' keys
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
-    createModelArchiveDir algorithm >>= (`saveAgent` agent)
+    createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker
 

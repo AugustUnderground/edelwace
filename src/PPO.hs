@@ -352,13 +352,13 @@ runAlgorithm iteration agent envUrl tracker _ states = do
     runAlgorithm iteration' agent' envUrl tracker done' states'
   where
     iteration' = iteration + 1
-    ptPath     = "./models/" ++ algorithm
+    ptPath     = "./models/" ++ show algorithm
 
 -- | Train Proximal Policy Optimization Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
+    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
@@ -367,7 +367,7 @@ train obsDim actDim envUrl trackingUri = do
 
     !agent <- mkAgent obsDim actDim >>= 
         (\agent' -> runAlgorithm 0 agent' envUrl tracker False states )
-    createModelArchiveDir algorithm >>= (`saveAgent` agent)
+    createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
     
     endRuns' tracker
 

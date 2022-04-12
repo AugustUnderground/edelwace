@@ -13,8 +13,8 @@ import qualified Torch as T
 ------------------------------------------------------------------------------
 
 -- | Algorithm ID
-algorithm :: String
-algorithm     = "sac"
+algorithm :: Algorithm
+algorithm     = SAC
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True

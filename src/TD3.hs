@@ -215,9 +215,10 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     when (verbose && iteration `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    _ <- trackLoss tracker iteration "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker iteration "Q2" (T.asValue jQ2 :: Float)
-
+    _ <- trackLoss tracker (iteration * numEpochs + epoch) 
+                   "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker (iteration * numEpochs + epoch) 
+                   "Q2" (T.asValue jQ2 :: Float)
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
 
@@ -225,7 +226,8 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
         updateActor = do
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            _ <- trackLoss tracker iteration "policy" (T.asValue jφ :: Float)
+            _ <- trackLoss tracker (iteration * numEpochs + epoch) 
+                           "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
@@ -324,13 +326,14 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
         buffer' = HER.push bufferSize buffer states actions rewards states'
                            dones targets targets'
 
-    _ <- trackReward tracker iteration rewards
+    _ <- trackReward tracker (iteration * numSteps + step) rewards
     when (even step) do
-        _ <- trackEnvState tracker envUrl step
+        _ <- trackEnvState tracker envUrl (iteration * numSteps + step)
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
-        putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
+        putStrLn $ "\tStep " ++ show step ++ ", Average Reward:\t" 
+                             ++ show (T.mean rewards)
 
     evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
                       states' targets buffer'
@@ -365,7 +368,7 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
     runAlgorithmRPB iteration' agent' envUrl tracker done' buffer' states'
   where
     iteration' = iteration + 1
-    ptPath     = "./models/" ++ algorithm
+    ptPath     = "./models/" ++ show algorithm
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training with HER
 runAlgorithmHER :: Int -> Agent -> HymURL -> Tracker -> Bool 
@@ -380,17 +383,14 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     buf'    <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
                                  tracker states targets episodeBuffer
 
-    buffer' <- if samplingStrategy == HER.Random
+    buffer' <- if strategy == HER.Random
                   then HER.sampleTargets HER.Random k relTol 
                             $ HER.push' bufferSize buffer buf'
-                  else HER.push' bufferSize buffer 
-                           <$> foldM (\b b' -> HER.push' bufferSize b 
-                                           <$> HER.sampleTargets samplingStrategy 
-                                                                 k relTol b') 
-                                     buf' (HER.envSplit numEnvs buf')
+                  else foldM (\b b' -> HER.push' bufferSize b 
+                                   <$> HER.sampleTargets strategy k relTol b') 
+                             buffer (HER.envSplit numEnvs buf')
 
-    let buf = HER.asRPB buffer'
-    !agent' <- updatePolicy iteration agent tracker buf numEpochs
+    !agent' <- updatePolicy iteration agent tracker (HER.asRPB buffer') numEpochs
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 
@@ -406,7 +406,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     done'         = iteration >= numIterations
     episodeBuffer = HER.mkBuffer
     iteration'    = iteration + 1
-    ptPath        = "./models/" ++ algorithm
+    ptPath        = "./models/" ++ show algorithm
 
 -- | Handle training for different replay buffer types
 train' :: HymURL -> Tracker -> BufferType -> Agent -> IO Agent
@@ -426,10 +426,10 @@ train' _ _ _ _ = undefined
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri algorithm >>= newRuns' numEnvs
+    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
     !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
-    createModelArchiveDir algorithm >>= (`saveAgent` agent)
+    createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker
 

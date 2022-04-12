@@ -41,6 +41,27 @@ import qualified MLFlow.DataStructures     as MLF
 -- Convenience / Syntactic Sugar
 ------------------------------------------------------------------------------
 
+-- | Deep Reinforcement Learning Algorithm
+data Algorithm = SAC -- ^ Soft Actor-Critic
+               | TD3 -- ^ Twin Delayed Deep Deterministic Policy Gradient
+               | PPO -- ^ Proximal Policy Optimization
+    deriving (Eq)
+
+instance Show Algorithm where
+  show SAC = "sac"
+  show TD3 = "td3"
+  show PPO = "ppo"
+
+instance Read Algorithm where
+  readsPrec _ "sac" = [(SAC, "")]
+  readsPrec _ "td3" = [(TD3, "")]
+  readsPrec _ "ppo" = [(PPO, "")]
+  readsPrec _ _     = undefined
+
+------------------------------------------------------------------------------
+-- Convenience / Syntactic Sugar
+------------------------------------------------------------------------------
+
 -- | Swaps the arguments of HaskTorch's foldLoop around
 foldLoop' :: Int -> (a -> Int -> IO a) -> a -> IO a
 foldLoop' i f m = T.foldLoop m i f

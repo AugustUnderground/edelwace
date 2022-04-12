@@ -111,7 +111,7 @@ envSplit ne buf = map (`sample` buf) idx
     bl   = size buf
     opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
     idx  = map T.squeezeAll . T.split 1 (T.Dim 0) 
-         $ T.reshape [-1,1] $ T.arange 0 ne 1  opts + T.arange 0 bl ne opts
+         $ T.reshape [-1,1] (T.arange 0 ne 1  opts) + T.arange 0 bl ne opts
 
 -- | Calculate reward for new targets given a relative tolerance
 newReward :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
@@ -163,18 +163,21 @@ sampleTargets Episode k tol buf = do
     opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
 sampleTargets Random k tol buf = sampleTargets Episode k tol buf
 sampleTargets Future k tol buf = do 
+    print $ fmap T.shape buf
+    buf'' <- sampleTargets Final k tol (T.indexSelect 0 idx' <$> buf)
+    print $ fmap T.shape buf''
     idx   <- forM [0, k .. (bs - k)] 
                   (\k' -> fst' . T.uniqueDim 0 False True True 
                       <$> T.randintIO k' bs [k] opts) 
-    buf'' <- sampleTargets Final k tol (T.indexSelect 0 idx' <$> buf)
+    print idx
     let buf' = augmentTarget k tol idx buf
         cap  = bs + size buf' + size buf''
+    print $ fmap T.shape buf'
     pure $ foldl (push' cap) buf [buf', buf'']
   where
     bs   = size buf
     idx' = T.arange (bs - k) (bs - 1) 1 opts
     opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
--- sampleTargets _ _ _ _ = error "Not Implemented"
 
 -- | Convert HER Buffer to RPB for training
 asRPB :: Buffer T.Tensor -> RPB.Buffer T.Tensor

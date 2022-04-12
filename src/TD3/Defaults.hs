@@ -5,7 +5,7 @@ module TD3.Defaults where
 
 import Lib
 import RPB
-import qualified RPB.HER as HER
+import RPB.HER
 
 import qualified Torch   as T
 
@@ -14,8 +14,8 @@ import qualified Torch   as T
 ------------------------------------------------------------------------------
 
 -- | Algorithm ID
-algorithm :: String
-algorithm     = "td3"
+algorithm :: Algorithm
+algorithm     = TD3
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True
@@ -27,16 +27,16 @@ numIterations :: Int
 numIterations = round (1.0e8 :: Float)
 -- | Number of Steps to take with policy
 numSteps :: Int
-numSteps = 1
+numSteps = 100
 -- | Number of epochs to train
 numEpochs :: Int
-numEpochs = 1
+numEpochs = 40
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
 -- | Mini batch of N transistions
 batchSize :: Int
-batchSize     = 100
+batchSize     = 128
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
@@ -123,11 +123,11 @@ warmupPeriode    = 50
 ------------------------------------------------------------------------------
 
 -- | Target Sampling Strategy
-samplingStrategy :: HER.Strategy
-samplingStrategy = HER.Future
+strategy :: Strategy
+strategy = Future
 -- | Number of Additional Targets to sample
 k :: Int 
-k = 4
+k        = 4
 -- | Error Tolerance for Target / Reward Calculation
 relTol :: T.Tensor
-relTol = toTensor (1.0e-3 :: Float)
+relTol   = toTensor (1.0e-3 :: Float)

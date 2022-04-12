@@ -13,8 +13,8 @@ import qualified Torch as T
 ------------------------------------------------------------------------------
 
 -- | Algorithm ID
-algorithm :: String
-algorithm     = "ppo"
+algorithm :: Algorithm
+algorithm     = PPO
 -- | Print verbose debug output
 verbose :: Bool
 verbose       = True
