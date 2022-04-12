@@ -64,20 +64,20 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 400) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 128) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 400     300)
+                                       <*> ( T.sample (T.LinearSpec 128     128)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 300 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 128 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 400) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 400 300) 
+                                         <*> ( T.sample (T.LinearSpec 128 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 300 1) 
+                                         <*> ( T.sample (T.LinearSpec 128 1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
@@ -101,10 +101,10 @@ q CriticNet{..} o a = v
 
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q' c1 c2 s a = v
+q' c1 c2 o a = v
   where
-    q1 = q c1 s a
-    q2 = q c2 s a
+    q1 = q c1 o a
+    q2 = q c2 o a
     v  = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
 
 ------------------------------------------------------------------------------
@@ -183,16 +183,14 @@ loadAgent path obsDim iter actDim = do
 -- | Add Exploration Noise to Action
 addNoise :: Int -> T.Tensor -> IO T.Tensor
 addNoise t action = do
-    ε <- (σ' *) <$> normal' [l]
-    let action' = T.clamp (- 1.0) 1.0 (action + ε)
-    -- let action' = T.tanh $ action + ε
-    pure action'
+    ε <- normal' [l]
+    pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
   where
     l  = T.shape action !! 1
     d' = realToFrac decayPeriod
     t' = realToFrac t
     m  = min 1.0 (t' / d')
-    σ' = toTensor $ σMin - (σMax - σMin) * m
+    σ' = toTensor $ σMax - (σMax - σMin) * m
 
 ------------------------------------------------------------------------------
 -- Training
@@ -205,7 +203,9 @@ updateStep _ 0 agent _ _ = pure agent
 updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     ε <- normal μ' σ'
     let a' = π φ' s' + ε
-    y <- T.detach $ r + γ * q' θ1' θ2' s' a'
+        v' = q' θ1' θ2' s' a'
+    y <- T.detach $ r + (d' * γ * v')
+    -- y <- T.detach $ r + γ * q' θ1' θ2' s' a'
 
     let v1  = q θ1 s a
         v2  = q θ2 s a
@@ -228,7 +228,7 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
-            v   = q θ1 a'' s
+            v   = q θ1 s a''
             jφ  = negate . T.mean $ v
         syncTargets :: IO (ActorNet, CriticNet, CriticNet)
         syncTargets = do
@@ -257,6 +257,7 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     s      = states
     a      = actions
     r      = rewards
+    d'     = 1.0 - dones
     s'     = states'
 
 -- | Perform Policy Update Steps
