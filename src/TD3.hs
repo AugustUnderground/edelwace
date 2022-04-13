@@ -16,6 +16,7 @@ module TD3 ( algorithm
            , Agent (..)
            , mkAgent
            , saveAgent
+           , saveAgent'
            , loadAgent
            , π
            , q
@@ -162,6 +163,10 @@ saveAgent path Agent{..} = do
 
         putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
 
+-- | Save an Agent and return the agent
+saveAgent' :: String -> Agent -> IO Agent
+saveAgent' p a = saveAgent p a >> pure a
+
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
 loadAgent path obsDim iter actDim = do
@@ -183,10 +188,11 @@ loadAgent path obsDim iter actDim = do
 -- | Add Exploration Noise to Action
 addNoise :: Int -> T.Tensor -> IO T.Tensor
 addNoise t action = do
-    ε <- normal' [l]
+    ε <- normal' [n, 1]
     pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
   where
-    l  = T.shape action !! 1
+    -- n  = T.shape action !! 1
+    n  = head $ T.shape action
     d' = realToFrac decayPeriod
     t' = realToFrac t
     m  = min 1.0 (t' / d')
@@ -215,8 +221,8 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     when (verbose && epoch `mod` 10 == 0) do
         putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
-    _ <- trackLoss tracker (iter' !! epoch) "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker (iter' !! epoch) "Q2" (T.asValue jQ2 :: Float)
+    _ <- trackLoss tracker (iter' !! epoch') "Q1" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker (iter' !! epoch') "Q2" (T.asValue jQ2 :: Float)
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
     (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
 
@@ -224,7 +230,7 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
         updateActor = do
             when (verbose && epoch `mod` 10 == 0) do
                 putStrLn $ "\tφ  Loss:\t" ++ show jφ
-            _ <- trackLoss tracker (iter' !! epoch) "policy" (T.asValue jφ :: Float)
+            _ <- trackLoss tracker (iter' !! epoch') "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
             a'' = π φ s
@@ -312,10 +318,10 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
                   states targets buffer | S.size done == numEnvs = pure buffer
                                         | otherwise              = do
 
-    actions <- forM [states, targets] (T.detach >=> T.clone) 
-                >>= addNoise iteration . π φ . T.cat (T.Dim 1)
+    actions <- forM [states, targets] T.clone
+                >>= (addNoise iteration . π φ . T.cat (T.Dim 1))
                 >>= T.detach
-    
+
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
     let done'   = S.union done . S.fromList . T.asValue . T.squeezeAll 
@@ -384,23 +390,21 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     when verbose do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
-    numEnvs <- numEnvsPool envUrl
-    buf'    <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
-                                 tracker states targets buffer
+    numEnvs       <- numEnvsPool envUrl
+    episodeBuffer <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
+                                       tracker states targets HER.empty
 
     buffer' <- if strategy == HER.Random
-                  then HER.sampleTargets HER.Random k relTol 
-                            $ HER.push' bufferSize buffer buf'
+                  then HER.sampleTargets strategy k relTol $ 
+                            HER.push' bufferSize buffer episodeBuffer
                   else foldM (\b b' -> HER.push' bufferSize b 
                                    <$> HER.sampleTargets strategy k relTol b') 
-                             buffer (HER.envSplit numEnvs buf')
+                             buffer (HER.envSplit numEnvs episodeBuffer)
 
-    let buf = HER.asRPB buffer'
-    
-    !agent' <- updatePolicy iteration agent tracker buf numEpochs
+    let memory = HER.asRPB buffer'
 
-    when (iteration `mod` 10 == 0) do
-        saveAgent ptPath agent 
+    !agent' <- updatePolicy iteration agent tracker memory numEpochs
+    saveAgent ptPath agent 
 
     keys <- infoPool envUrl
     (states', targets', _) <- flip processGace'' keys <$> resetPool envUrl

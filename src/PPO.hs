@@ -16,6 +16,7 @@ module PPO ( algorithm
            , Agent (..)
            , mkAgent
            , saveAgent
+           , saveAgent'
            , loadAgent
            , π
            , q
@@ -153,6 +154,10 @@ saveAgent path Agent{..} = do
         putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
   where
     logStd' = T.toDependent logStd
+
+-- | Save an Agent and return the agent
+saveAgent' :: String -> Agent -> IO Agent
+saveAgent' p a = saveAgent p a >> pure a
 
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
