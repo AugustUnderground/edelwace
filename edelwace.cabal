@@ -52,6 +52,8 @@ library
     , containers
     , directory
     , hasktorch
+    , hvega
+    , ihaskell-hvega
     , lens
     , libtorch-ffi
     , mlflow-hs
@@ -75,6 +77,8 @@ executable edelwace-exe
     , directory
     , edelwace
     , hasktorch
+    , hvega
+    , ihaskell-hvega
     , lens
     , libtorch-ffi
     , mlflow-hs
@@ -101,6 +105,8 @@ test-suite edelwace-test
     , directory
     , edelwace
     , hasktorch
+    , hvega
+    , ihaskell-hvega
     , lens
     , libtorch-ffi
     , mlflow-hs

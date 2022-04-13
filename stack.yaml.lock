@@ -54,6 +54,13 @@ packages:
   original:
     git: https://github.com/AugustUnderground/mlflow-hs.git
     commit: 55c529fe25ddea7ffd391b04651050862d3a4596
+- completed:
+    hackage: ihaskell-hvega-0.3.2.0@sha256:57b749f3c14b224af6f9484b2cd531299dd740477aa6e6f300f19a8c291b5fac,1182
+    pantry-tree:
+      size: 430
+      sha256: 852f8648d13485bf4c1f56316fa90bddd2047a57ec6cfb0f4ef5b01fa5e6907a
+  original:
+    hackage: ihaskell-hvega-0.3.2.0@sha256:57b749f3c14b224af6f9484b2cd531299dd740477aa6e6f300f19a8c291b5fac,1182
 snapshots:
 - completed:
     size: 587113

@@ -34,7 +34,8 @@ dependencies:
 - numeric-limits
 - optparse-applicative
 - mlflow-hs
-  #- hvega
+- hvega
+- ihaskell-hvega
 
 library:
   source-dirs: src
