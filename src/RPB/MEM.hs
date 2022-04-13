@@ -2,7 +2,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
--- | Replay Buffers and Memory Loaders
+-- | PPO Style Replay Memory and Memory Loaders
 module RPB.MEM ( Buffer (..)
                , mkBuffer
                , size

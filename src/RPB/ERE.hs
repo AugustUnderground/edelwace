@@ -2,7 +2,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
--- | Replay Buffers and Memory Loaders
+-- | Emphasizing Recent Experiences
 module RPB.ERE ( samplingRange
                , sample
                , anneal

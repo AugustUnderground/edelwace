@@ -2,7 +2,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
--- | Replay Buffers and Memory Loaders
+-- | Default / Naive Replay Buffer
 module RPB.RPB ( Buffer (..)
                , mkBuffer
                , size

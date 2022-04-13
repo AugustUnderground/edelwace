@@ -2,7 +2,7 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
--- | Replay Buffers and Memory Loaders
+-- | Prioritized Experience Replay
 module RPB.PER ( Buffer (..)
                , mkBuffer
                , push

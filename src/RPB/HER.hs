@@ -2,10 +2,11 @@
 
 {-# LANGUAGE RecordWildCards #-}
 
--- | Replay Buffers and Memory Loaders
+-- | Hindsight Experience Replay
 module RPB.HER ( Strategy (..)
                , Buffer (..) 
                , mkBuffer
+               , empty
                , size
                , push
                , push'
@@ -58,6 +59,10 @@ mkBuffer = Buffer ft ft ft ft bt ft ft
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts
     bt   = T.asTensor' ([] :: [Bool]) opts
+
+-- | Create an empty HER Buffer
+empty :: Buffer T.Tensor
+empty = mkBuffer
 
 -- | How many Trajectories are currently stored in memory
 size :: Buffer T.Tensor -> Int
