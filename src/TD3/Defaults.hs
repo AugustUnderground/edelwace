@@ -68,6 +68,12 @@ actionHigh = 1.0
 -- | Policy and Target Critic Update Delay
 d :: Int
 d           = 2
+-- | Target Networks update Delay, relative to iteration
+dTarget :: Int 
+dTarget = 16
+-- | Policy update Delay, relative to iteration
+dPolicy :: Int 
+dPolicy = 16
 -- | Noise clipping
 c :: Float
 c           = 0.5

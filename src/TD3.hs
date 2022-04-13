@@ -243,11 +243,11 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
             θ2Target' <- softSync τ θ2' θ2 
             pure (φTarget', θ1Target', θ2Target')
 
-    (φOnline', φOptim') <- if iteration `mod` d == 0 
+    (φOnline', φOptim') <- if epoch `mod` dPolicy == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
-    (φTarget', θ1Target', θ2Target') <- if iteration `mod` d == 0
+    (φTarget', θ1Target', θ2Target') <- if iteration `mod` dTarget == 0
                                            then syncTargets
                                            else pure (φ', θ1', θ2')
 
