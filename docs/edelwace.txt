@@ -1168,6 +1168,12 @@ actionHigh :: Float
 -- | Policy and Target Critic Update Delay
 d :: Int
 
+-- | Target Networks update Delay, relative to iteration
+dTarget :: Int
+
+-- | Policy update Delay, relative to iteration
+dPolicy :: Int
+
 -- | Noise clipping
 c :: Float
 
