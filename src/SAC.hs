@@ -41,8 +41,6 @@ import MLFlow                 (TrackingURI)
 import Control.Monad
 import GHC.Generics
 import qualified Torch                            as T
---import qualified Torch.Functional                 as T (indexPut)
---import qualified Torch.Functional.Internal        as T (indexAdd)
 import qualified Torch.NN                         as NN
 import qualified Torch.Distributions.Distribution as D
 
