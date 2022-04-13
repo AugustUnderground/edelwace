@@ -530,7 +530,7 @@ wInit :: Float
 β2 :: Float
 
 
--- | Replay Buffers and Memory Loaders
+-- | PPO Style Replay Memory and Memory Loaders
 module RPB.MEM
 
 -- | Replay Memory
@@ -655,6 +655,9 @@ mkAgent :: Int -> Int -> IO Agent
 -- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
 
+-- | Save an Agent and return the agent
+saveAgent' :: String -> Agent -> IO Agent
+
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
 
@@ -682,7 +685,7 @@ instance Torch.NN.Randomizable PPO.CriticNetSpec PPO.CriticNet
 instance Torch.NN.Randomizable PPO.ActorNetSpec PPO.ActorNet
 
 
--- | Replay Buffers and Memory Loaders
+-- | Default / Naive Replay Buffer
 module RPB.RPB
 
 -- | Strict Simple/Naive Replay Buffer
@@ -729,7 +732,7 @@ instance GHC.Show.Show a => GHC.Show.Show (RPB.RPB.Buffer a)
 instance GHC.Base.Functor RPB.RPB.Buffer
 
 
--- | Replay Buffers and Memory Loaders
+-- | Prioritized Experience Replay
 module RPB.PER
 
 -- | Strict Prioritized Experience Replay Buffer
@@ -776,7 +779,7 @@ instance GHC.Show.Show a => GHC.Show.Show (RPB.PER.Buffer a)
 instance GHC.Base.Functor RPB.PER.Buffer
 
 
--- | Replay Buffers and Memory Loaders
+-- | Hindsight Experience Replay
 module RPB.HER
 
 -- | Hindsight Experience Replay Strategies for choosing Goals
@@ -824,6 +827,9 @@ Buffer :: !a -> !a -> !a -> !a -> !a -> !a -> !a -> Buffer a
 -- | Create a new, empty HER Buffer on the GPU
 mkBuffer :: Buffer Tensor
 
+-- | Create an empty HER Buffer
+empty :: Buffer Tensor
+
 -- | How many Trajectories are currently stored in memory
 size :: Buffer Tensor -> Int
 
@@ -865,7 +871,7 @@ instance GHC.Show.Show a => GHC.Show.Show (RPB.HER.Buffer a)
 instance GHC.Base.Functor RPB.HER.Buffer
 
 
--- | Replay Buffers and Memory Loaders
+-- | Emphasizing Recent Experiences
 module RPB.ERE
 
 -- | Calculate ERE Sampling range cK
@@ -1072,6 +1078,9 @@ mkAgent :: Int -> Int -> IO Agent
 -- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
 
+-- | Save an Agent and return the agent
+saveAgent' :: String -> Agent -> IO Agent
+
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
 
@@ -1149,6 +1158,12 @@ aceBackend :: String
 
 -- | ACE Environment variant
 aceVariant :: Int
+
+-- | Action space lower bound
+actionLow :: Float
+
+-- | Action space upper bound
+actionHigh :: Float
 
 -- | Policy and Target Critic Update Delay
 d :: Int
@@ -1276,6 +1291,9 @@ mkAgent :: Int -> Int -> IO Agent
 
 -- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
+
+-- | Save an Agent and return the agent
+saveAgent' :: String -> Agent -> IO Agent
 
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
