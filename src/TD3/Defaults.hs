@@ -70,10 +70,10 @@ d :: Int
 d           = 2
 -- | Target Networks update Delay, relative to iteration
 dTarget :: Int 
-dTarget = 16
+dTarget     = 16
 -- | Policy update Delay, relative to iteration
 dPolicy :: Int 
-dPolicy = 16
+dPolicy     = 2
 -- | Noise clipping
 c :: Float
 c           = 0.5

@@ -219,8 +219,9 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
         jQ2 = T.mseLoss v2 y
 
     when (verbose && epoch `mod` 10 == 0) do
-        putStrLn $ "\tΘ1 Loss:\t" ++ show jQ1
-        putStrLn $ "\tΘ2 Loss:\t" ++ show jQ2
+        putStrLn $ "\tEpoch " ++ show epoch
+        putStrLn $ "\t\tΘ1 Loss:\t" ++ show jQ1
+        putStrLn $ "\t\tΘ2 Loss:\t" ++ show jQ2
     _ <- trackLoss tracker (iter' !! epoch') "Q1" (T.asValue jQ1 :: Float)
     _ <- trackLoss tracker (iter' !! epoch') "Q2" (T.asValue jQ2 :: Float)
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
@@ -229,7 +230,7 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     let updateActor :: IO (ActorNet, T.Adam)
         updateActor = do
             when (verbose && epoch `mod` 10 == 0) do
-                putStrLn $ "\tφ  Loss:\t" ++ show jφ
+                putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
             _ <- trackLoss tracker (iter' !! epoch') "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
@@ -299,7 +300,7 @@ evaluatePolicyRPB iteration step agent@Agent{..} envUrl tracker states buffer = 
     let buffer' = RPB.push bufferSize buffer states actions rewards states' dones
 
     when (verbose && iteration `mod` 10 == 0) do
-        putStrLn $ "\tAverage Reward:\t" ++ show (T.mean rewards)
+        putStrLn $ "\tAverage Reward: \t" ++ show (T.mean rewards)
 
     when (verbose && T.any dones) do
         let de = T.squeezeAll . T.nonzero . T.squeezeAll $ dones
@@ -324,14 +325,13 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    let done'   = S.union done . S.fromList . T.asValue . T.squeezeAll 
-                . T.nonzero . T.squeezeAll $ dones
-        keys    = head infos
+    let dones' = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+        done'  = S.union done . S.fromList $ (T.asValue dones' :: [Int])
+        keys   = head infos
 
     (states', targets', targets'') <- if T.any dones 
            then flip   processGace'' keys <$> resetPool' envUrl dones
            else pure $ processGace'' states'' keys
-
 
     let buffer' = HER.push bufferSize buffer states actions rewards states'
                            dones targets' targets''
@@ -342,7 +342,7 @@ evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
-        putStrLn $ "\tStep " ++ show step ++ ", Average Reward:\t" 
+        putStrLn $ "\tStep " ++ show step ++ ", Average Reward: \t" 
                              ++ show (T.mean rewards)
 
     evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
@@ -391,15 +391,17 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
         putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
 
     numEnvs       <- numEnvsPool envUrl
-    episodeBuffer <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
+    trajectories  <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
                                        tracker states targets HER.empty
+
+    let episodes = concatMap HER.epsSplit $ HER.envSplit numEnvs trajectories
 
     buffer' <- if strategy == HER.Random
                   then HER.sampleTargets strategy k relTol $ 
-                            HER.push' bufferSize buffer episodeBuffer
+                        foldl (HER.push' bufferSize) buffer episodes
                   else foldM (\b b' -> HER.push' bufferSize b 
                                    <$> HER.sampleTargets strategy k relTol b') 
-                             buffer (HER.envSplit numEnvs episodeBuffer)
+                             buffer episodes
 
     let memory = HER.asRPB buffer'
 
