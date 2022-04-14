@@ -27,10 +27,10 @@ numIterations :: Int
 numIterations = round (1.0e8 :: Float)
 -- | Number of Steps to take with policy
 numSteps :: Int
-numSteps = 100
+numSteps      = 100
 -- | Number of epochs to train
 numEpochs :: Int
-numEpochs = 40
+numEpochs     = 40
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -47,16 +47,16 @@ rngSeed       = 666
            
 -- | ACE Identifier of the Environment
 aceId :: String
-aceId       = "op2"
+aceId      = "op2"
 -- |  PDK/Technology backend of the ACE Environment
 aceBackend :: String
 aceBackend = "xh035"
 -- | ACE Environment variant
 aceVariant :: Int
-aceVariant  = 0
+aceVariant = 0
 -- | Action space lower bound
 actionLow :: Float
-actionLow = - 1.0
+actionLow  = - 1.0
 -- | Action space upper bound
 actionHigh :: Float
 actionHigh = 1.0
@@ -83,18 +83,30 @@ c           = 0.5
 -- | Avantage Factor
 τ :: T.Tensor
 τ           = toTensor (1.0e-2 :: Float)
--- | Sampling Noise as Tensor
-σ :: T.Tensor
-σ           = toTensor (0.2 :: Float)
 -- | Decay Period
 decayPeriod :: Int
 decayPeriod = round (1.0e5 :: Float)
 -- | Noise Clipping Minimum
 σMin :: Float
-σMin        = 1
+σMin        = 1.0
 -- | Noise Clipping Maximuxm
 σMax :: Float
-σMax        = 1
+σMax        = 1.0
+-- | Evaluation Noise standard deviation (σ~)
+σEval :: T.Tensor
+σEval       = toTensor ([0.2] :: [Float])
+-- | Exploration Noise mean
+μExpl :: T.Tensor
+μExpl       = toTensor ([0.0] :: [Float])
+-- | Action Noise standard deviation
+σAct :: T.Tensor
+σAct        = toTensor ([0.1] :: [Float])
+-- | Min bound on Exploration
+explLow :: Float
+explLow     = - 0.5
+-- | Max bound on Exploration
+explHigh :: Float
+explHigh    = 0.5
 
 ------------------------------------------------------------------------------
 -- Neural Network Parameter Settings
@@ -105,10 +117,10 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 ηθ :: T.Tensor
-ηθ     = toTensor (1.0e-3 :: Float)
+ηθ    = toTensor (1.0e-3 :: Float)
 -- | Learning Rate
 ηφ :: T.Tensor
-ηφ     = toTensor (1.0e-3 :: Float)
+ηφ    = toTensor (1.0e-3 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
@@ -122,13 +134,13 @@ wInit = 3.0e-3
 
 -- | Replay Buffer Type
 bufferType :: BufferType
-bufferType       = HER
+bufferType    = HER
 -- | Replay Buffer Size
 bufferSize :: Int
-bufferSize       = round (1.0e6 :: Float)
+bufferSize    = round (1.0e6 :: Float)
 -- | Initial sample collecting period
 warmupPeriode :: Int
-warmupPeriode    = 50
+warmupPeriode = 50
 
 ------------------------------------------------------------------------------
 -- Hindsight Experience Replay Settings

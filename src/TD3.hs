@@ -21,7 +21,9 @@ module TD3 ( algorithm
            , π
            , q
            , q'
-           , addNoise
+           , act
+           , act'
+           , evaluate
            , train
            -- , play
            ) where
@@ -185,18 +187,51 @@ loadAgent path obsDim iter actDim = do
        
         pure $ Agent fφ fφ' fθ1 fθ2 fθ1' fθ2' fφOpt fθ1Opt fθ2Opt
 
--- | Add Exploration Noise to Action
-addNoise :: Int -> T.Tensor -> IO T.Tensor
-addNoise t action = do
-    ε <- normal' [n, 1]
-    pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
+-- | Add Dynamic Exploration Noise to Action based on #Episode
+-- addNoise :: Int -> T.Tensor -> IO T.Tensor
+-- addNoise t action = do
+--     ε <- normal' [n, 1]
+--     pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
+--   where
+--     -- n  = T.shape action !! 1
+--     n  = head $ T.shape action
+--     d' = realToFrac decayPeriod
+--     t' = realToFrac t
+--     m  = min 1.0 (t' / d')
+--     σ' = toTensor $ σMax - (σMax - σMin) * m
+
+-- | Get action from online policy with naive / static Exploration Noise
+act :: Agent -> T.Tensor -> IO T.Tensor
+act Agent{..} s = do
+    ε <- toFloatGPU <$> T.normalIO μ σ
+    T.detach $ T.clamp actionLow actionHigh (a + ε)
   where
-    -- n  = T.shape action !! 1
-    n  = head $ T.shape action
+    a = π φ s
+    μ = toFloatGPU $ T.zerosLike a
+    σ = T.repeat (T.shape a) σAct
+
+-- | Get action from online policy with dynamic Exploration Noise
+act' :: Int -> Agent -> T.Tensor -> IO T.Tensor
+act' t Agent{..} s = do
+    ε <- toFloatGPU <$> T.normalIO μ σ
+    T.detach $ T.clamp actionLow actionHigh (a + ε)
+  where
+    a  = π φ s
     d' = realToFrac decayPeriod
     t' = realToFrac t
     m  = min 1.0 (t' / d')
-    σ' = toTensor $ σMax - (σMax - σMin) * m
+    μ  = toFloatGPU $ T.zerosLike a
+    σ = T.repeat (T.shape a) . toTensor $ σMax - (σMax - σMin) * m
+
+-- | Get an action
+evaluate :: Agent -> T.Tensor -> IO T.Tensor
+evaluate Agent{..} s = do
+    ε <- toFloatGPU . T.clamp (- c) c <$> T.normalIO μ σ
+    T.detach (a + ε)
+  where
+    a = π φ' s
+    μ = toFloatGPU $ T.zerosLike a
+    σ = T.repeat (T.shape a) σEval
 
 ------------------------------------------------------------------------------
 -- Training
@@ -206,12 +241,10 @@ addNoise t action = do
 updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor 
            -> IO Agent
 updateStep _ 0 agent _ _ = pure agent
-updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
-    ε <- normal μ' σ'
-    let a' = π φ' s' + ε
-        v' = q' θ1' θ2' s' a'
+updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
+    a' <- evaluate agent s'
+    let v' = q' θ1' θ2' s' a'
     y <- T.detach $ r + (d' * γ * v')
-    -- y <- T.detach $ r + γ * q' θ1' θ2' s' a'
 
     let v1  = q θ1 s a
         v2  = q θ2 s a
@@ -258,8 +291,6 @@ updateStep iteration epoch Agent{..} tracker buffer@RPB.Buffer{..} = do
     updateStep iteration epoch' agent' tracker buffer
   where
     iter'  = reverse [(iteration * numEpochs) .. (iteration * numEpochs + numEpochs)]
-    μ'     = T.zerosLike actions
-    σ'     = T.onesLike μ' * σ
     epoch' = epoch - 1
     s      = states
     a      = actions
@@ -278,12 +309,13 @@ updatePolicy iteration agent tracker buffer epochs = do
 evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
                -> RPB.Buffer T.Tensor -> IO (RPB.Buffer T.Tensor, T.Tensor)
 evaluatePolicyRPB _ 0 _ _ _ states buffer = pure (buffer, states)
-evaluatePolicyRPB iteration step agent@Agent{..} envUrl tracker states buffer = do
+evaluatePolicyRPB iteration step agent envUrl tracker states buffer = do
 
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
                   then randomActionPool envUrl
-                  else addNoise iteration (π φ states) >>= T.detach
+                  else act' iteration agent states >>= T.detach
+                  -- else addNoise iteration (π φ states) >>= T.detach
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
@@ -315,12 +347,16 @@ evaluatePolicyRPB iteration step agent@Agent{..} envUrl tracker states buffer = 
 evaluatePolicyHER :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
                   -> Tracker -> T.Tensor -> T.Tensor -> HER.Buffer T.Tensor 
                   -> IO (HER.Buffer T.Tensor)
-evaluatePolicyHER iteration step done numEnvs agent@Agent{..} envUrl tracker 
-                  states targets buffer | S.size done == numEnvs = pure buffer
-                                        | otherwise              = do
+evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states 
+                  targets buffer | S.size done == numEnvs = pure buffer
+                                 | otherwise              = do
 
-    actions <- forM [states, targets] T.clone
-                >>= (addNoise iteration . π φ . T.cat (T.Dim 1))
+    -- actions <- forM [states, targets] T.clone
+    --             >>= (addNoise iteration . π φ . T.cat (T.Dim 1))
+    --             >>= T.detach
+
+    actions <- forM [states, targets] T.clone 
+                >>= act' iteration agent . T.cat (T.Dim 1) 
                 >>= T.detach
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
