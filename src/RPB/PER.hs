@@ -5,6 +5,7 @@
 -- | Prioritized Experience Replay
 module RPB.PER ( Buffer (..)
                , mkBuffer
+               , empty
                , push
                , push'
                , sampleIO 
@@ -38,8 +39,12 @@ instance Functor Buffer where
 mkBuffer :: Int -> Float -> Float -> Int -> Buffer T.Tensor
 mkBuffer = Buffer buf prio
   where
-    buf  = RPB.mkBuffer
+    buf  = RPB.empty
     prio = emptyTensor
+
+-- | Create Empty Buffer
+empty :: Int -> Float -> Float -> Int -> Buffer T.Tensor
+empty = mkBuffer
 
 -- | Push new memories in a Buffer
 push :: Buffer T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 

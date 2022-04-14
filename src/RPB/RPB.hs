@@ -5,6 +5,7 @@
 -- | Default / Naive Replay Buffer
 module RPB.RPB ( Buffer (..)
                , mkBuffer
+               , empty
                , size
                , push
                , push'
@@ -39,6 +40,10 @@ mkBuffer = Buffer ft ft ft ft bt
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts
     bt   = T.asTensor' ([] :: [Bool]) opts
+
+-- | Create Empty Buffer
+empty :: Buffer T.Tensor
+empty = mkBuffer
 
 -- | How many Trajectories are currently stored in memory
 size :: Buffer T.Tensor -> Int
