@@ -43,6 +43,10 @@ fullLike' :: Tensor -> Float -> Tensor
 -- | Select index with [Int] from GPU tensor
 indexSelect'' :: Int -> [Int] -> Tensor -> Tensor
 
+-- | Syntactic sugar for HaskTorch's <tt>repeatInterleave</tt> so it can
+--   more easily be fmapped.
+repeatInterleave' :: Int -> Tensor -> Tensor -> Tensor
+
 -- | Apply same function to both Left and Right
 both :: (a -> b) -> Either a a -> b
 
@@ -54,6 +58,12 @@ range :: Int -> [Int]
 
 -- | First of triple
 fst' :: (a, b, c) -> a
+
+-- | Helper function creating split indices
+splits :: [Int] -> [[Int]]
+
+-- | Helper function creating split indices as gpu int tensor
+splits' :: [Int] -> [Tensor]
 
 -- | Current Timestamp as formatted string
 currentTimeStamp :: String -> IO String
@@ -839,11 +849,14 @@ push :: Int -> Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -
 -- | Push one buffer into another one
 push' :: Int -> Buffer Tensor -> Buffer Tensor -> Buffer Tensor
 
--- | Drop everything after done (used for single episode)
+-- | Drop everything after last done (used for single episode)
 drop' :: Buffer Tensor -> Buffer Tensor
 
 -- | Split buffer collected from pool by env
 envSplit :: Int -> Buffer Tensor -> [Buffer Tensor]
+
+-- | Split a buffer into episodes, dropping the last unfinished
+epsSplit :: Buffer Tensor -> [Buffer Tensor]
 
 -- | Get the given indices from Buffer
 sample :: Tensor -> Buffer Tensor -> Buffer Tensor
@@ -857,10 +870,7 @@ sampleTargets :: Strategy -> Int -> Tensor -> Buffer Tensor -> IO (Buffer Tensor
 newReward :: Tensor -> Tensor -> Tensor -> Tensor
 
 -- | Augment by changing acheived target, done flag and reward
-augmentTarget' :: Tensor -> Tensor -> Buffer Tensor -> Buffer Tensor
-
--- | Augment targets for given indices
-augmentTarget :: Int -> Tensor -> [Tensor] -> Buffer Tensor -> Buffer Tensor
+augmentTarget :: Tensor -> Tensor -> Buffer Tensor -> Buffer Tensor
 
 -- | Convert HER Buffer to RPB for training
 asRPB :: Buffer Tensor -> Buffer Tensor
