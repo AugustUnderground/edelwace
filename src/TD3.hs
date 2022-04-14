@@ -31,15 +31,16 @@ module TD3 ( algorithm
 import Lib
 import TD3.Defaults
 import RPB
-import qualified RPB.RPB  as RPB
-import qualified RPB.HER  as HER
-import MLFlow       (TrackingURI)
+import qualified RPB.RPB                   as RPB
+import qualified RPB.HER                   as HER
+import MLFlow               (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
-import qualified Data.Set as S
-import qualified Torch    as T
-import qualified Torch.NN as NN
+import qualified Data.Set                  as S
+import qualified Torch                     as T
+import qualified Torch.Functional.Internal as T (negative)
+import qualified Torch.NN                  as NN
 
 ------------------------------------------------------------------------------
 -- Neural Networks
@@ -94,7 +95,8 @@ instance T.Randomizable CriticNetSpec CriticNet where
 π :: ActorNet -> T.Tensor -> T.Tensor
 π ActorNet{..} o = a
   where
-    a = T.tanh . T.linear pLayer2 
+    a = T.tanh . T.linear pLayer3
+      . T.relu . T.linear pLayer2
       . T.relu . T.linear pLayer1 
       . T.relu . T.linear pLayer0 
       $ o
@@ -104,7 +106,8 @@ q :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
 q CriticNet{..} o a = v
   where 
     x = T.cat (T.Dim $ -1) [o,a]
-    v = T.linear qLayer2 . T.relu
+    v = T.linear qLayer3 . T.relu
+      . T.linear qLayer2 . T.relu
       . T.linear qLayer1 . T.relu
       . T.linear qLayer0 $ x
 
@@ -193,19 +196,6 @@ loadAgent path obsDim iter actDim = do
        
         pure $ Agent fφ fφ' fθ1 fθ2 fθ1' fθ2' fφOpt fθ1Opt fθ2Opt
 
--- | Add Dynamic Exploration Noise to Action based on #Episode
--- addNoise :: Int -> T.Tensor -> IO T.Tensor
--- addNoise t action = do
---     ε <- normal' [n, 1]
---     pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
---   where
---     -- n  = T.shape action !! 1
---     n  = head $ T.shape action
---     d' = realToFrac decayPeriod
---     t' = realToFrac t
---     m  = min 1.0 (t' / d')
---     σ' = toTensor $ σMax - (σMax - σMin) * m
-
 -- | Get action from online policy with naive / static Exploration Noise
 act :: Agent -> T.Tensor -> IO T.Tensor
 act Agent{..} s = do
@@ -233,7 +223,7 @@ act' t Agent{..} s = do
 evaluate :: Agent -> T.Tensor -> IO T.Tensor
 evaluate Agent{..} s = do
     ε <- toFloatGPU . T.clamp (- c) c <$> T.normalIO μ σ
-    T.detach (a + ε)
+    T.detach $ T.clamp actionLow actionHigh (a + ε)
   where
     a = π φ' s
     μ = toFloatGPU $ T.zerosLike a
@@ -273,9 +263,8 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
             _ <- trackLoss tracker (iter' !! epoch') "policy" (T.asValue jφ :: Float)
             T.runStep φ φOptim jφ ηφ
           where
-            a'' = π φ s
-            v   = q θ1 s a''
-            jφ  = negate . T.mean $ v
+            v   = q θ1 s $ π φ s
+            jφ  = T.negative . T.mean $ v
         syncTargets :: IO (ActorNet, CriticNet, CriticNet)
         syncTargets = do
             φTarget'  <- softSync τ φ'  φ
@@ -321,7 +310,6 @@ evaluatePolicyRPB iteration step agent envUrl tracker states buffer = do
     actions <- if p < warmupPeriode
                   then randomActionPool envUrl
                   else act' iteration agent states >>= T.detach
-                  -- else addNoise iteration (π φ states) >>= T.detach
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
@@ -356,10 +344,6 @@ evaluatePolicyHER :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL
 evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states 
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
-
-    -- actions <- forM [states, targets] T.clone
-    --             >>= (addNoise iteration . π φ . T.cat (T.Dim 1))
-    --             >>= T.detach
 
     actions <- forM [states, targets] T.clone 
                 >>= act' iteration agent . T.cat (T.Dim 1) 

@@ -41,6 +41,7 @@ import MLFlow                 (TrackingURI)
 import Control.Monad
 import GHC.Generics
 import qualified Torch                            as T
+import qualified Torch.Functional.Internal        as T (negative)
 import qualified Torch.NN                         as NN
 import qualified Torch.Distributions.Distribution as D
 
@@ -282,7 +283,7 @@ updateStepPER iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} we
         updateAlpha = do
             logπ_t0 <- T.clone logπ_t0' >>= T.detach
             -- let jα = T.mean (- α * logπ_t0 - α * h)
-            let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
+            let jα = T.negative . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && iteration `mod` 10 == 0) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
@@ -382,7 +383,7 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} = 
     let updateAlpha :: IO(T.IndependentTensor, T.Adam)
         updateAlpha = do
             logπ_t0 <- T.clone logπ_t0' >>= T.detach
-            let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
+            let jα = T.negative . T.mean $ αLog' * (logπ_t0 + h)
             when (verbose && (bufferType == RPB || epoch `mod` 4 == 0)) do
                 putStrLn $ "\tα  Loss:\t" ++ show jα
             _ <- trackLoss tracker iteration "alpha" (T.asValue jα :: Float)
@@ -474,7 +475,7 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker RPB.Buffer{..} = do
     (a_t0', logπ_t0') <- evaluate agent s_t0 εNoise
 
     logπ_t0 <- T.clone logπ_t0' >>= T.detach
-    let jα = negate . T.mean $ αLog' * (logπ_t0 + h)
+    let jα = T.negative . T.mean $ αLog' * (logπ_t0 + h)
 
     when (verbose && epoch `mod` 4 == 0) do
         putStrLn $ "\t\tα  Loss:\t" ++ show jα
