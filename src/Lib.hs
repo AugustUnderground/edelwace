@@ -32,13 +32,12 @@ import qualified Data.ByteString           as BS hiding (pack)
 import qualified Torch                     as T
 import qualified Torch.NN                  as NN
 import qualified Torch.Lens                as TL
-import qualified Torch.Functional.Internal as T         (where', nan_to_num)
+import qualified Torch.Functional.Internal as T         (where', nan_to_num, repeatInterleave)
 import qualified Torch.Initializers        as T
 import qualified MLFlow                    as MLF
 import qualified MLFlow.DataStructures     as MLF
-
 ------------------------------------------------------------------------------
--- Convenience / Syntactic Sugar
+-- Algorithms
 ------------------------------------------------------------------------------
 
 -- | Deep Reinforcement Learning Algorithm
@@ -102,6 +101,11 @@ indexSelect'' dim idx ten = ten'
     idx' = T.asTensor' idx opts
     ten' = T.indexSelect dim idx' ten
 
+-- | Syntactic sugar for HaskTorch's `repeatInterleave` so it can more easily
+-- be fmapped.
+repeatInterleave' :: Int -> T.Tensor -> T.Tensor -> T.Tensor
+repeatInterleave' dim rep self = T.repeatInterleave self rep dim
+
 -- | Apply same function to both Left and Right
 both :: (a -> b) -> Either a a -> b
 both f = either f f
@@ -118,6 +122,16 @@ range n = [0 .. (n - 1)]
 -- | First of triple
 fst' :: (a,b,c) -> a
 fst' (a,_,_) = a
+
+-- | Helper function creating split indices
+splits :: [Int] -> [[Int]]
+splits (x:y:zs) = [x .. y] : splits (succ y:zs)
+splits [_]      = []
+splits []       = []
+
+-- | Helper function creating split indices as gpu int tensor
+splits' :: [Int] -> [T.Tensor]
+splits' = map toIntTensor . splits
 
 ------------------------------------------------------------------------------
 -- File System
