@@ -57,30 +57,36 @@ data CriticNetSpec = CriticNetSpec { qObsDim :: Int, qActDim :: Int }
 data ActorNet = ActorNet { pLayer0 :: T.Linear
                          , pLayer1 :: T.Linear
                          , pLayer2 :: T.Linear 
+                         , pLayer3 :: T.Linear 
                          } deriving (Generic, Show, T.Parameterized)
 
 -- | Critic Network Architecture
 data CriticNet = CriticNet { qLayer0 :: T.Linear
                            , qLayer1 :: T.Linear
                            , qLayer2 :: T.Linear 
+                           , qLayer3 :: T.Linear 
                            } deriving (Generic, Show, T.Parameterized)
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 128) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 64) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 128     128)
+                                       <*> ( T.sample (T.LinearSpec 64      64)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 128 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 64      64)
+                                             >>= weightInitUniform' )
+                                       <*> ( T.sample (T.LinearSpec 64 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 128 128) 
+                                         <*> ( T.sample (T.LinearSpec 64  64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 128 1) 
+                                         <*> ( T.sample (T.LinearSpec 64  64) 
+                                               >>= weightInitUniform' )
+                                         <*> ( T.sample (T.LinearSpec 64  1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
