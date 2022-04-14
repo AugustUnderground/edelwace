@@ -1193,9 +1193,6 @@ c :: Float
 -- | Avantage Factor
 τ :: Tensor
 
--- | Sampling Noise as Tensor
-σ :: Tensor
-
 -- | Decay Period
 decayPeriod :: Int
 
@@ -1204,6 +1201,21 @@ decayPeriod :: Int
 
 -- | Noise Clipping Maximuxm
 σMax :: Float
+
+-- | Evaluation Noise standard deviation (σ~)
+σEval :: Tensor
+
+-- | Exploration Noise mean
+μExpl :: Tensor
+
+-- | Action Noise standard deviation
+σAct :: Tensor
+
+-- | Min bound on Exploration
+explLow :: Float
+
+-- | Max bound on Exploration
+explHigh :: Float
 
 -- | Initial weights
 wInit :: Float
@@ -1323,8 +1335,21 @@ q :: CriticNet -> Tensor -> Tensor -> Tensor
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
 
--- | Add Exploration Noise to Action
-addNoise :: Int -> Tensor -> IO Tensor
+-- | Add Dynamic Exploration Noise to Action based on #Episode addNoise ::
+--   Int -&gt; T.Tensor -&gt; IO T.Tensor addNoise t action = do ε &lt;-
+--   normal' [n, 1] pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
+--   where -- n = T.shape action !! 1 n = head $ T.shape action d' =
+--   realToFrac decayPeriod t' = realToFrac t m = min 1.0 (t' / d') σ' =
+--   toTensor $ σMax - (σMax - σMin) * m
+--   
+--   Get action from online policy with naive / static Exploration Noise
+act :: Agent -> Tensor -> IO Tensor
+
+-- | Get action from online policy with dynamic Exploration Noise
+act' :: Int -> Agent -> Tensor -> IO Tensor
+
+-- | Get an action
+evaluate :: Agent -> Tensor -> IO Tensor
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on
 --   Environment
