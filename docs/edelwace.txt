@@ -568,6 +568,9 @@ Buffer :: !a -> !a -> !a -> !a -> !a -> !a -> Buffer a
 -- | Create a new, empty Buffer on the GPU
 mkBuffer :: Buffer Tensor
 
+-- | Create Empty Buffer
+empty :: Buffer Tensor
+
 -- | How many Trajectories are currently stored in memory
 size :: Buffer Tensor -> Int
 
@@ -720,6 +723,9 @@ Buffer :: !a -> !a -> !a -> !a -> !a -> Buffer a
 -- | Create a new, empty Buffer on the GPU
 mkBuffer :: Buffer Tensor
 
+-- | Create Empty Buffer
+empty :: Buffer Tensor
+
 -- | How many Trajectories are currently stored in memory
 size :: Buffer Tensor -> Int
 
@@ -769,6 +775,9 @@ Buffer :: Buffer a -> !Tensor -> !Int -> !Float -> !Float -> !Int -> Buffer a
 
 -- | Create an empty PER Buffer
 mkBuffer :: Int -> Float -> Float -> Int -> Buffer Tensor
+
+-- | Create Empty Buffer
+empty :: Int -> Float -> Float -> Int -> Buffer Tensor
 
 -- | Push new memories in a Buffer
 push :: Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Buffer Tensor
@@ -1271,17 +1280,19 @@ CriticNetSpec :: Int -> Int -> CriticNetSpec
 
 -- | Actor Network Architecture
 data ActorNet
-ActorNet :: Linear -> Linear -> Linear -> ActorNet
+ActorNet :: Linear -> Linear -> Linear -> Linear -> ActorNet
 [pLayer0] :: ActorNet -> Linear
 [pLayer1] :: ActorNet -> Linear
 [pLayer2] :: ActorNet -> Linear
+[pLayer3] :: ActorNet -> Linear
 
 -- | Critic Network Architecture
 data CriticNet
-CriticNet :: Linear -> Linear -> Linear -> CriticNet
+CriticNet :: Linear -> Linear -> Linear -> Linear -> CriticNet
 [qLayer0] :: CriticNet -> Linear
 [qLayer1] :: CriticNet -> Linear
 [qLayer2] :: CriticNet -> Linear
+[qLayer3] :: CriticNet -> Linear
 
 -- | TD3 Agent
 data Agent
@@ -1335,14 +1346,7 @@ q :: CriticNet -> Tensor -> Tensor -> Tensor
 -- | Convenience Function
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
 
--- | Add Dynamic Exploration Noise to Action based on #Episode addNoise ::
---   Int -&gt; T.Tensor -&gt; IO T.Tensor addNoise t action = do ε &lt;-
---   normal' [n, 1] pure $ T.clamp actionLow actionHigh (action + (σ' * ε))
---   where -- n = T.shape action !! 1 n = head $ T.shape action d' =
---   realToFrac decayPeriod t' = realToFrac t m = min 1.0 (t' / d') σ' =
---   toTensor $ σMax - (σMax - σMin) * m
---   
---   Get action from online policy with naive / static Exploration Noise
+-- | Get action from online policy with naive / static Exploration Noise
 act :: Agent -> Tensor -> IO Tensor
 
 -- | Get action from online policy with dynamic Exploration Noise
