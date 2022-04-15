@@ -111,7 +111,7 @@ q CriticNet{..} o a = v
       . T.linear qLayer1 . T.relu
       . T.linear qLayer0 $ x
 
--- | Convenience Function
+-- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
 q' c1 c2 o a = v
   where
@@ -200,7 +200,7 @@ loadAgent path obsDim iter actDim = do
 act :: Agent -> T.Tensor -> IO T.Tensor
 act Agent{..} s = do
     ε <- toFloatGPU <$> T.normalIO μ σ
-    T.detach $ T.clamp actionLow actionHigh (a + ε)
+    pure $ T.clamp actionLow actionHigh (a + ε)
   where
     a = π φ s
     μ = toFloatGPU $ T.zerosLike a
@@ -210,7 +210,7 @@ act Agent{..} s = do
 act' :: Int -> Agent -> T.Tensor -> IO T.Tensor
 act' t Agent{..} s = do
     ε <- toFloatGPU <$> T.normalIO μ σ
-    T.detach $ T.clamp actionLow actionHigh (a + ε)
+    pure $ T.clamp actionLow actionHigh (a + ε)
   where
     a  = π φ s
     d' = realToFrac decayPeriod
@@ -223,7 +223,7 @@ act' t Agent{..} s = do
 evaluate :: Agent -> T.Tensor -> IO T.Tensor
 evaluate Agent{..} s = do
     ε <- toFloatGPU . T.clamp (- c) c <$> T.normalIO μ σ
-    T.detach $ T.clamp actionLow actionHigh (a + ε)
+    pure $ T.clamp actionLow actionHigh (a + ε)
   where
     a = π φ' s
     μ = toFloatGPU $ T.zerosLike a
@@ -239,44 +239,29 @@ updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor
 updateStep _ 0 agent _ _ = pure agent
 updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     a' <- evaluate agent s'
-    let v' = q' θ1' θ2' s' a'
-    y <- T.detach $ r + (d' * γ * v')
-
-    let v1  = q θ1 s a
+    let v'  = q' θ1' θ2' s' a'
+        y   = r + ((1.0 - d') * γ * v')
+        v1  = q θ1 s a
         v2  = q θ2 s a
-        jQ1 = T.mseLoss v1 y
-        jQ2 = T.mseLoss v2 y
+
+    jQ1 <- T.mseLoss v1 <$> T.detach y
+    jQ2 <- T.mseLoss v2 <$> T.detach y
+
+    (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
+    (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηθ
 
     when (verbose && epoch `mod` 10 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch
         putStrLn $ "\t\tΘ1 Loss:\t" ++ show jQ1
         putStrLn $ "\t\tΘ2 Loss:\t" ++ show jQ2
-    _ <- trackLoss tracker (iter' !! epoch') "Q1" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker (iter' !! epoch') "Q2" (T.asValue jQ2 :: Float)
-    (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
-    (θ2Online', θ2Optim') <- T.runStep θ2 θ1Optim jQ2 ηθ
-
-    let updateActor :: IO (ActorNet, T.Adam)
-        updateActor = do
-            when (verbose && epoch `mod` 10 == 0) do
-                putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
-            _ <- trackLoss tracker (iter' !! epoch') "policy" (T.asValue jφ :: Float)
-            T.runStep φ φOptim jφ ηφ
-          where
-            v   = q θ1 s $ π φ s
-            jφ  = T.negative . T.mean $ v
-        syncTargets :: IO (ActorNet, CriticNet, CriticNet)
-        syncTargets = do
-            φTarget'  <- softSync τ φ'  φ
-            θ1Target' <- softSync τ θ1' θ1 
-            θ2Target' <- softSync τ θ2' θ2 
-            pure (φTarget', θ1Target', θ2Target')
+    _ <- trackLoss tracker (iter' !! epoch') "Critic1_Loss" (T.asValue jQ1 :: Float)
+    _ <- trackLoss tracker (iter' !! epoch') "Critic2_Loss" (T.asValue jQ2 :: Float)
 
     (φOnline', φOptim') <- if epoch `mod` dPolicy == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
-    (φTarget', θ1Target', θ2Target') <- if iteration `mod` dTarget == 0
+    (φTarget', θ1Target', θ2Target') <- if epoch' == 0
                                            then syncTargets
                                            else pure (φ', θ1', θ2')
 
@@ -290,8 +275,25 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     s      = states
     a      = actions
     r      = rewards
-    d'     = 1.0 - dones
+    d'     = dones
     s'     = states'
+    updateActor :: IO (ActorNet, T.Adam)
+    updateActor = do
+        when (verbose && epoch `mod` 10 == 0) do
+            putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
+        _ <- trackLoss tracker (iter' !! epoch') "Actor_Loss" (T.asValue jφ :: Float)
+        T.runStep φ φOptim jφ ηφ
+      where
+        v   = q θ1 s $ π φ s
+        jφ  = T.negative . T.mean $ v
+    syncTargets :: IO (ActorNet, CriticNet, CriticNet)
+    syncTargets = do
+        when verbose do
+            putStrLn "\t\tUpdating Targets."
+        φTarget'  <- softSync τ φ'  φ
+        θ1Target' <- softSync τ θ1' θ1 
+        θ2Target' <- softSync τ θ2' θ2 
+        pure (φTarget', θ1Target', θ2Target')
 
 -- | Perform Policy Update Steps
 updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
@@ -345,8 +347,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    actions <- forM [states, targets] T.clone 
-                >>= act' iteration agent . T.cat (T.Dim 1) 
+    actions <- act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
                 >>= T.detach
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
