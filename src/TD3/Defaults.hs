@@ -24,7 +24,7 @@ numEpisodes :: Int
 numEpisodes   = 666
 -- | Horizon T
 numIterations :: Int
-numIterations = round (1.0e8 :: Float)
+numIterations = 10 ^ (8 :: Int)
 -- | Number of Steps to take with policy
 numSteps :: Int
 numSteps      = 100
@@ -85,7 +85,7 @@ c           = 0.5
 τ           = toTensor (1.0e-2 :: Float)
 -- | Decay Period
 decayPeriod :: Int
-decayPeriod = round (1.0e5 :: Float)
+decayPeriod = 10 ^ (5 :: Int)
 -- | Noise Clipping Minimum
 σMin :: Float
 σMin        = 1.0
@@ -95,18 +95,9 @@ decayPeriod = round (1.0e5 :: Float)
 -- | Evaluation Noise standard deviation (σ~)
 σEval :: T.Tensor
 σEval       = toTensor ([0.2] :: [Float])
--- | Exploration Noise mean
-μExpl :: T.Tensor
-μExpl       = toTensor ([0.0] :: [Float])
 -- | Action Noise standard deviation
 σAct :: T.Tensor
 σAct        = toTensor ([0.1] :: [Float])
--- | Min bound on Exploration
-explLow :: Float
-explLow     = - 0.5
--- | Max bound on Exploration
-explHigh :: Float
-explHigh    = 0.5
 
 ------------------------------------------------------------------------------
 -- Neural Network Parameter Settings
@@ -137,7 +128,7 @@ bufferType :: BufferType
 bufferType    = HER
 -- | Replay Buffer Size
 bufferSize :: Int
-bufferSize    = round (1.0e6 :: Float)
+bufferSize    = 10 ^ (6 :: Int)
 -- | Initial sample collecting period
 warmupPeriode :: Int
 warmupPeriode = 50
