@@ -30,8 +30,8 @@ numEpochs     = 1
 -- | Total Number of iterations, depends on `bufferType`.
 numIterations :: Int
 numIterations = if bufferType == RPB 
-                   then round (1.0e6 :: Float)
-                   else round (1.0e4 :: Float)
+                   then 10 ^ (6 :: Int)
+                   else 10 ^ (4 :: Int)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -131,7 +131,7 @@ wInit =  3.0e-3
 
 -- | Maximum size of Replay Buffer
 bufferSize :: Int
-bufferSize = round (1.0e6 :: Float)
+bufferSize = 10 ^ (6 :: Int)
 -- | Powerlaw Exponent
 αStart :: Float
 αStart     = 0.6
@@ -140,7 +140,7 @@ bufferSize = round (1.0e6 :: Float)
 βStart     = 0.4
 -- | Weight Exponent Delay
 βFrames ::  Int
-βFrames    = round (1.0e5 :: Float)
+βFrames    = 10 ^ (5 :: Int)
 
 ------------------------------------------------------------------------------
 -- Emphasizing Recent Experience Settings
