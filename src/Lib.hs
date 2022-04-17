@@ -25,7 +25,8 @@ import GHC.Generics
 import GHC.Float             (float2Double)
 import Numeric.Limits        (maxValue, minValue)
 import System.Directory
-import Network.Wreq
+import Network.Wreq                        as Wreq
+import Network.HTTP.Client                 as HTTP
 import qualified Data.Map                  as M
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString           as BS hiding (pack)
@@ -328,6 +329,13 @@ uniform' shape lo hi = unscale . toFloatGPU <$> T.randIO' shape
 -- Hym Server Interaction and Environment
 ------------------------------------------------------------------------------
 
+-- | Default HTTP options for Hym server communication
+httpOptions :: Wreq.Options
+httpOptions = defaults & manager 
+           .~ Left ( HTTP.defaultManagerSettings 
+                        { HTTP.managerResponseTimeout = 
+                            HTTP.responseTimeoutMicro 666666 } )
+
 -- | Info object gotten form stepping
 data Info = Info { observations :: ![String]    -- ^ Observation Keys
                  , actions      :: ![String]    -- ^ Action Keys
@@ -378,12 +386,13 @@ stepsToTuple steps = (obs, rew, don, inf)
 
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO BS.ByteString
-hymGet url route = BL.toStrict . (^. responseBody) <$>  get (url ++ "/" ++ route)
+hymGet url route =  BL.toStrict . (^. Wreq.responseBody) 
+                <$> getWith httpOptions (url ++ "/" ++ route)
 
 -- | Send a POST Request to a Hym Server
 hymPost :: HymURL -> String -> Value -> IO BS.ByteString
-hymPost url route payload = BL.toStrict . (^. responseBody) 
-                         <$> post (url ++ "/" ++ route) payload 
+hymPost url route payload = BL.toStrict . (^. Wreq.responseBody) 
+                         <$> postWith httpOptions (url ++ "/" ++ route) payload 
 
 -- | Convert a JSON Response from an ACE Server to a Map
 hymPoolMap :: HymURL -> String -> IO (M.Map Int (M.Map String Float))

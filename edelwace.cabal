@@ -52,6 +52,7 @@ library
     , containers
     , directory
     , hasktorch
+    , http-client
     , hvega
     , ihaskell-hvega
     , lens
@@ -77,6 +78,7 @@ executable edelwace-exe
     , directory
     , edelwace
     , hasktorch
+    , http-client
     , hvega
     , ihaskell-hvega
     , lens
@@ -105,6 +107,7 @@ test-suite edelwace-test
     , directory
     , edelwace
     , hasktorch
+    , http-client
     , hvega
     , ihaskell-hvega
     , lens
