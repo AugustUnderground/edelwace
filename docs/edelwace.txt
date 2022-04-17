@@ -172,6 +172,9 @@ normal :: Tensor -> Tensor -> IO Tensor
 -- | Generate Uniformally distributed values in a given range
 uniform' :: [Int] -> Float -> Float -> IO Tensor
 
+-- | Default HTTP options for Hym server communication
+httpOptions :: Options
+
 -- | Info object gotten form stepping
 data Info
 Info :: ![String] -> ![String] -> Info
@@ -1214,17 +1217,8 @@ decayPeriod :: Int
 -- | Evaluation Noise standard deviation (σ~)
 σEval :: Tensor
 
--- | Exploration Noise mean
-μExpl :: Tensor
-
 -- | Action Noise standard deviation
 σAct :: Tensor
-
--- | Min bound on Exploration
-explLow :: Float
-
--- | Max bound on Exploration
-explHigh :: Float
 
 -- | Initial weights
 wInit :: Float
@@ -1343,7 +1337,7 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 -- | Critic Network Forward Pass
 q :: CriticNet -> Tensor -> Tensor -> Tensor
 
--- | Convenience Function
+-- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
 
 -- | Get action from online policy with naive / static Exploration Noise
