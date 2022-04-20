@@ -325,6 +325,13 @@ uniform' shape lo hi = unscale . toFloatGPU <$> T.randIO' shape
     xMax = toTensor hi
     unscale x = x * (xMax - xMin) + xMin
 
+-- | Rescale tensor s.t. mean = 0.0 and std = 1.0
+rescale :: T.Tensor -> T.Tensor
+rescale x = x'
+  where
+    (σ,μ) = T.stdMean True x
+    x'    = (x - μ) / σ
+
 ------------------------------------------------------------------------------
 -- Hym Server Interaction and Environment
 ------------------------------------------------------------------------------
@@ -387,12 +394,14 @@ stepsToTuple steps = (obs, rew, don, inf)
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO BS.ByteString
 hymGet url route =  BL.toStrict . (^. Wreq.responseBody) 
-                <$> getWith httpOptions (url ++ "/" ++ route)
+                <$> get (url ++ "/" ++ route)
+                -- <$> getWith httpOptions (url ++ "/" ++ route)
 
 -- | Send a POST Request to a Hym Server
 hymPost :: HymURL -> String -> Value -> IO BS.ByteString
 hymPost url route payload = BL.toStrict . (^. Wreq.responseBody) 
-                         <$> postWith httpOptions (url ++ "/" ++ route) payload 
+                         <$> post (url ++ "/" ++ route) payload 
+                         -- <$> postWith httpOptions (url ++ "/" ++ route) payload 
 
 -- | Convert a JSON Response from an ACE Server to a Map
 hymPoolMap :: HymURL -> String -> IO (M.Map Int (M.Map String Float))
