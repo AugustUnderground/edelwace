@@ -352,9 +352,10 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
-    let dones' = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
-        done'  = S.union done . S.fromList $ (T.asValue dones' :: [Int])
-        keys   = head infos
+    let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+        done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
+        keys    = head infos
+        success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
     (states', targets', targets'') <- if T.any dones 
            then flip   processGace'' keys <$> resetPool' envUrl dones
@@ -363,7 +364,12 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
     let buffer' = HER.push bufferSize buffer states actions rewards states'
                            dones targets' targets''
 
+    when (step < numSteps) do
+        _ <- trackLoss   tracker (iter' !! step) "Success" success
+        pure ()
+
     _ <- trackReward tracker (iter' !! step) rewards
+
     when (even step) do
         _ <- trackEnvState tracker envUrl (iter' !! step)
         pure ()
@@ -430,7 +436,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                                    <$> HER.sampleTargets strategy k relTol b') 
                              buffer episodes
 
-    let memory = HER.asRPB buffer'
+    let memory = RPB.scaleStates stateClip $ HER.asRPB buffer'
 
     !agent' <- updatePolicy iteration agent tracker memory numEpochs
     saveAgent ptPath agent 

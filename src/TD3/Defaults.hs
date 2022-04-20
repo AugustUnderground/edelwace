@@ -24,10 +24,10 @@ numEpisodes :: Int
 numEpisodes   = 666
 -- | Horizon T
 numIterations :: Int
-numIterations = 10 ^ (8 :: Int)
+numIterations = 500 -- 10 ^ (8 :: Int)
 -- | Number of Steps to take with policy
 numSteps :: Int
-numSteps      = 100
+numSteps      = 50
 -- | Number of epochs to train
 numEpochs :: Int
 numEpochs     = 40
@@ -132,6 +132,9 @@ bufferSize    = 10 ^ (6 :: Int)
 -- | Initial sample collecting period
 warmupPeriode :: Int
 warmupPeriode = 50
+-- | Range for clipping scaled states
+stateClip :: Float
+stateClip = 5.0
 
 ------------------------------------------------------------------------------
 -- Hindsight Experience Replay Settings
@@ -145,4 +148,4 @@ k :: Int
 k        = 4
 -- | Error Tolerance for Target / Reward Calculation
 relTol :: T.Tensor
-relTol   = toTensor (1.0e-3 :: Float)
+relTol   = toTensor (1.0e-4 :: Float)
