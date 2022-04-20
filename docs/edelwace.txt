@@ -172,6 +172,9 @@ normal :: Tensor -> Tensor -> IO Tensor
 -- | Generate Uniformally distributed values in a given range
 uniform' :: [Int] -> Float -> Float -> IO Tensor
 
+-- | Rescale tensor s.t. mean = 0.0 and std = 1.0
+rescale :: Tensor -> Tensor
+
 -- | Default HTTP options for Hym server communication
 httpOptions :: Options
 
@@ -746,6 +749,9 @@ sample :: Tensor -> Buffer Tensor -> Buffer Tensor
 
 -- | Uniform random sample from Replay Buffer
 sampleIO :: Int -> Buffer Tensor -> IO (Buffer Tensor)
+
+-- | Scale and clip states and states'
+scaleStates :: Float -> Buffer Tensor -> Buffer Tensor
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.RPB.Buffer a)
 instance GHC.Show.Show a => GHC.Show.Show (RPB.RPB.Buffer a)
 instance GHC.Base.Functor RPB.RPB.Buffer
@@ -1243,6 +1249,9 @@ bufferSize :: Int
 
 -- | Initial sample collecting period
 warmupPeriode :: Int
+
+-- | Range for clipping scaled states
+stateClip :: Float
 
 -- | Target Sampling Strategy
 strategy :: Strategy
