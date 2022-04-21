@@ -1193,14 +1193,8 @@ actionLow :: Float
 -- | Action space upper bound
 actionHigh :: Float
 
--- | Policy and Target Critic Update Delay
+-- | Policy and Target Update Delay
 d :: Int
-
--- | Target Networks update Delay, relative to iteration
-dTarget :: Int
-
--- | Policy update Delay, relative to iteration
-dPolicy :: Int
 
 -- | Noise clipping
 c :: Float
@@ -1283,17 +1277,19 @@ CriticNetSpec :: Int -> Int -> CriticNetSpec
 
 -- | Actor Network Architecture
 data ActorNet
-ActorNet :: Linear -> Linear -> Linear -> ActorNet
+ActorNet :: Linear -> Linear -> Linear -> Linear -> ActorNet
 [pLayer0] :: ActorNet -> Linear
 [pLayer1] :: ActorNet -> Linear
 [pLayer2] :: ActorNet -> Linear
+[pLayer3] :: ActorNet -> Linear
 
 -- | Critic Network Architecture
 data CriticNet
-CriticNet :: Linear -> Linear -> Linear -> CriticNet
+CriticNet :: Linear -> Linear -> Linear -> Linear -> CriticNet
 [qLayer0] :: CriticNet -> Linear
 [qLayer1] :: CriticNet -> Linear
 [qLayer2] :: CriticNet -> Linear
+[qLayer3] :: CriticNet -> Linear
 
 -- | TD3 Agent
 data Agent
