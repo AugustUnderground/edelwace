@@ -132,8 +132,9 @@ epsSplit buf@Buffer{..} = map (\i -> fmap (T.indexSelect 0 i) buf) d
 
 -- | Calculate reward for new targets given a relative tolerance
 newReward :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
-newReward relTol obs tgt = T.negative . T.logicalNot . T.allDim (T.Dim 1) True
-                         $ T.le (T.abs (obs - tgt) / tgt) relTol
+newReward relTol obs tgt = T.negative . T.toDType T.Float 
+                         . T.allDim (T.Dim 1) True . T.gt relTol 
+                         . (`T.div` tgt) . T.abs $ T.sub obs tgt
 
 -- | Augment by changing acheived target, done flag and reward
 augmentTarget :: T.Tensor -> T.Tensor -> Buffer T.Tensor -> Buffer T.Tensor
