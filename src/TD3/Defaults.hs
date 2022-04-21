@@ -65,24 +65,18 @@ actionHigh = 1.0
 --  TD3 Algorithm Hyper Parameters
 ------------------------------------------------------------------------------
 
--- | Policy and Target Critic Update Delay
+-- | Policy and Target Update Delay
 d :: Int
 d           = 2
--- | Target Networks update Delay, relative to iteration
-dTarget :: Int 
-dTarget     = 16
--- | Policy update Delay, relative to iteration
-dPolicy :: Int 
-dPolicy     = 2
 -- | Noise clipping
 c :: Float
 c           = 0.5
 -- | Discount Factor
 γ :: T.Tensor
-γ           = toTensor (0.99 :: Float)
+γ           = toTensor (0.98 :: Float)
 -- | Avantage Factor
 τ :: T.Tensor
-τ           = toTensor (1.0e-2 :: Float)
+τ           = toTensor (0.95 :: Float) -- (1.0e-2 :: Float)
 -- | Decay Period
 decayPeriod :: Int
 decayPeriod = 10 ^ (5 :: Int)

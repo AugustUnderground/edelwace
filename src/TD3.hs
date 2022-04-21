@@ -58,30 +58,36 @@ data CriticNetSpec = CriticNetSpec { qObsDim :: Int, qActDim :: Int }
 data ActorNet = ActorNet { pLayer0 :: T.Linear
                          , pLayer1 :: T.Linear
                          , pLayer2 :: T.Linear 
+                         , pLayer3 :: T.Linear 
                          } deriving (Generic, Show, T.Parameterized)
 
 -- | Critic Network Architecture
 data CriticNet = CriticNet { qLayer0 :: T.Linear
                            , qLayer1 :: T.Linear
                            , qLayer2 :: T.Linear 
+                           , qLayer3 :: T.Linear 
                            } deriving (Generic, Show, T.Parameterized)
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 128) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256     256)
+                                       <*> ( T.sample (T.LinearSpec 128      64)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 64       64)
+                                             >>= weightInitUniform' )
+                                       <*> ( T.sample (T.LinearSpec 64  pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 256) 
+                                         <*> ( T.sample (T.LinearSpec 128  64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 1) 
+                                         <*> ( T.sample (T.LinearSpec 64   64) 
+                                               >>= weightInitUniform' )
+                                         <*> ( T.sample (T.LinearSpec 64    1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
@@ -89,9 +95,10 @@ instance T.Randomizable CriticNetSpec CriticNet where
 π :: ActorNet -> T.Tensor -> T.Tensor
 π ActorNet{..} o = a
   where
-    a = T.tanh . T.linear pLayer2
-      . T.relu . T.linear pLayer1 
-      . T.relu . T.linear pLayer0 
+    a = T.tanh . T.linear pLayer3
+      . T.relu . T.linear pLayer2
+      . T.relu . T.linear pLayer1
+      . T.relu . T.linear pLayer0
       $ o
 
 -- | Critic Network Forward Pass
@@ -99,7 +106,8 @@ q :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
 q CriticNet{..} o a = v
   where 
     x = T.cat (T.Dim $ -1) [o,a]
-    v = T.linear qLayer2 . T.relu
+    v = T.linear qLayer3 . T.relu
+      . T.linear qLayer2 . T.relu
       . T.linear qLayer1 . T.relu
       . T.linear qLayer0 $ x
 
@@ -249,7 +257,7 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     _ <- trackLoss tracker (iter' !! epoch') "Critic1_Loss" (T.asValue jQ1 :: Float)
     _ <- trackLoss tracker (iter' !! epoch') "Critic2_Loss" (T.asValue jQ2 :: Float)
 
-    (φOnline', φOptim') <- if epoch `mod` dPolicy == 0 
+    (φOnline', φOptim') <- if iteration `mod` d == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
