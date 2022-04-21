@@ -70,9 +70,9 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 128) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 64) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 128      64)
+                                       <*> ( T.sample (T.LinearSpec 64      64)
                                              >>= weightInitUniform' )
                                        <*> ( T.sample (T.LinearSpec 64       64)
                                              >>= weightInitUniform' )
@@ -81,13 +81,13 @@ instance T.Randomizable ActorNetSpec ActorNet where
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 128  64) 
+                                         <*> ( T.sample (T.LinearSpec 64  64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 64   64) 
+                                         <*> ( T.sample (T.LinearSpec 64  64) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 64    1) 
+                                         <*> ( T.sample (T.LinearSpec 64   1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
@@ -257,7 +257,7 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     _ <- trackLoss tracker (iter' !! epoch') "Critic1_Loss" (T.asValue jQ1 :: Float)
     _ <- trackLoss tracker (iter' !! epoch') "Critic2_Loss" (T.asValue jQ2 :: Float)
 
-    (φOnline', φOptim') <- if iteration `mod` d == 0 
+    (φOnline', φOptim') <- if epoch `mod` d == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
@@ -281,7 +281,8 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     updateActor = do
         when (verbose && epoch `mod` 10 == 0) do
             putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
-        _ <- trackLoss tracker (iter' !! epoch') "Actor_Loss" (T.asValue jφ :: Float)
+        _ <- trackLoss tracker ((iter' !! epoch') `div` d) 
+                       "Actor_Loss" (T.asValue jφ :: Float)
         T.runStep φ φOptim jφ ηφ
       where
         v   = q θ1 s $ π φ s
