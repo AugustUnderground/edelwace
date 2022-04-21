@@ -25,7 +25,7 @@ import qualified RPB.RPB                   as RPB
 
 import Control.Monad
 import qualified Torch                     as T
-import qualified Torch.Functional.Internal as T (where')
+import qualified Torch.Functional.Internal as T (negative)
 
 ------------------------------------------------------------------------------
 -- Hindsight Experience Replay
@@ -132,13 +132,8 @@ epsSplit buf@Buffer{..} = map (\i -> fmap (T.indexSelect 0 i) buf) d
 
 -- | Calculate reward for new targets given a relative tolerance
 newReward :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
-newReward relTol obs tgt = rew'
-  where
-    opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
-    msk  = T.allDim (T.Dim 1) True $ T.le (T.abs (obs - tgt) / tgt) relTol
-    dims = [head $ T.shape obs, 1]
-    rew' = T.where' msk (T.full dims (  0.0  :: Float) opts)
-                        (T.full dims ((-1.0) :: Float) opts) 
+newReward relTol obs tgt = T.negative . T.logicalNot . T.allDim (T.Dim 1) True
+                         $ T.le (T.abs (obs - tgt) / tgt) relTol
 
 -- | Augment by changing acheived target, done flag and reward
 augmentTarget :: T.Tensor -> T.Tensor -> Buffer T.Tensor -> Buffer T.Tensor
