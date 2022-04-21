@@ -329,7 +329,7 @@ uniform' shape lo hi = unscale . toFloatGPU <$> T.randIO' shape
 rescale :: T.Tensor -> T.Tensor
 rescale x = x'
   where
-    (σ,μ) = T.stdMean True x
+    (σ,μ) = T.stdMeanDim (T.Dim  0) True T.KeepDim x
     x'    = (x - μ) / σ
 
 ------------------------------------------------------------------------------
