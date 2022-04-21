@@ -590,8 +590,8 @@ processGace'' obs Info{..} = (states, target, target')
   where
     k2i kl    = T.toDType T.Int32 . toTensor 
               . map (fromJust . flip elemIndex kl)
-    keys    = filter (\k -> (  (k `elem` actions) 
-                           || (isLower . head $ k) 
+    keys    = filter (\k -> ( (isLower . head $ k) 
+                           -- \ || (k `elem` actions) 
                            || (k == "A") )
                           -- && not ("target_" `isPrefixOf` k) 
                           && not ("delta_"  `isPrefixOf` k) 
