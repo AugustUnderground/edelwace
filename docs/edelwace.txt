@@ -1202,7 +1202,8 @@ c :: Float
 -- | Discount Factor
 γ :: Tensor
 
--- | Avantage Factor
+-- | Soft Update coefficient (sometimes "polyak") of the target networks τ
+--   ∈ [0,1]
 τ :: Tensor
 
 -- | Decay Period
