@@ -175,7 +175,8 @@ uniform' :: [Int] -> Float -> Float -> IO Tensor
 -- | Rescale tensor s.t. mean = 0.0 and std = 1.0
 rescale :: Tensor -> Tensor
 
--- | Default HTTP options for Hym server communication
+-- | HTTP options for Hym server communication, sometimes simulations can
+--   take a while, therefore we wait ...
 httpOptions :: Options
 
 -- | Info object gotten form stepping
