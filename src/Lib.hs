@@ -336,12 +336,13 @@ rescale x = x'
 -- Hym Server Interaction and Environment
 ------------------------------------------------------------------------------
 
--- | Default HTTP options for Hym server communication
+-- | HTTP options for Hym server communication, sometimes simulations can take
+-- a while, therefore we wait ...
 httpOptions :: Wreq.Options
-httpOptions = defaults & manager 
+httpOptions = Wreq.defaults & manager 
            .~ Left ( HTTP.defaultManagerSettings 
                         { HTTP.managerResponseTimeout = 
-                            HTTP.responseTimeoutMicro 666666 } )
+                            HTTP.responseTimeoutNone } )
 
 -- | Info object gotten form stepping
 data Info = Info { observations :: ![String]    -- ^ Observation Keys
@@ -394,14 +395,14 @@ stepsToTuple steps = (obs, rew, don, inf)
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO BS.ByteString
 hymGet url route =  BL.toStrict . (^. Wreq.responseBody) 
-                <$> get (url ++ "/" ++ route)
-                -- <$> getWith httpOptions (url ++ "/" ++ route)
+                <$> getWith httpOptions (url ++ "/" ++ route)
+                -- <$> get (url ++ "/" ++ route)
 
 -- | Send a POST Request to a Hym Server
 hymPost :: HymURL -> String -> Value -> IO BS.ByteString
 hymPost url route payload = BL.toStrict . (^. Wreq.responseBody) 
-                         <$> post (url ++ "/" ++ route) payload 
-                         -- <$> postWith httpOptions (url ++ "/" ++ route) payload 
+                         <$> postWith httpOptions (url ++ "/" ++ route) payload 
+                         -- <$> post (url ++ "/" ++ route) payload 
 
 -- | Convert a JSON Response from an ACE Server to a Map
 hymPoolMap :: HymURL -> String -> IO (M.Map Int (M.Map String Float))
