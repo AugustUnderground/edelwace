@@ -348,8 +348,10 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    actions <- act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
-                >>= T.detach
+    actions <- if iteration > 0
+                  then act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
+                          >>= T.detach
+                  else randomActionPool envUrl
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
