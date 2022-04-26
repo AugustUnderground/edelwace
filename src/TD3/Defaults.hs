@@ -36,7 +36,7 @@ earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
 -- | Mini batch of N transistions
 batchSize :: Int
-batchSize     = 256
+batchSize     = 128
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
@@ -73,7 +73,7 @@ c :: Float
 c           = 0.5
 -- | Discount Factor
 γ :: T.Tensor
-γ           = toTensor (0.99 :: Float)
+γ           = toTensor (0.98 :: Float)
 -- | Soft Update coefficient (sometimes "polyak") of the target networks τ ∈ [0,1]
 τ :: T.Tensor
 τ           = toTensor (0.005 :: Float)
@@ -102,10 +102,10 @@ wInit :: Float
 wInit = 3.0e-3
 -- | Learning Rate
 ηθ :: T.Tensor
-ηθ    = toTensor (3.0e-4 :: Float)
+ηθ    = toTensor (1.0e-3 :: Float)
 -- | Learning Rate
 ηφ :: T.Tensor
-ηφ    = toTensor (3.0e-4 :: Float)
+ηφ    = toTensor (1.0e-3 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9

@@ -37,6 +37,7 @@ import qualified Torch.Functional.Internal as T         (where', nan_to_num, rep
 import qualified Torch.Initializers        as T
 import qualified MLFlow                    as MLF
 import qualified MLFlow.DataStructures     as MLF
+
 ------------------------------------------------------------------------------
 -- Algorithms
 ------------------------------------------------------------------------------
@@ -102,6 +103,10 @@ indexSelect'' dim idx ten = ten'
     idx' = T.asTensor' idx opts
     ten' = T.indexSelect dim idx' ten
 
+-- | Torch.where' with fixed type for where'
+where'' :: T.Tensor -> (T.Tensor -> T.Tensor) -> T.Tensor -> T.Tensor
+where'' msk fn self = T.where' msk (fn self) self
+
 -- | Syntactic sugar for HaskTorch's `repeatInterleave` so it can more easily
 -- be fmapped.
 repeatInterleave' :: Int -> T.Tensor -> T.Tensor -> T.Tensor
@@ -154,6 +159,19 @@ createModelArchiveDir algorithm = do
     pure path
   where
     path' = "./models/" ++ algorithm ++ "/"
+
+-- | Optimizer moments at given prefix
+saveOptim :: T.Adam -> FilePath -> IO ()
+saveOptim optim prefix = do
+    T.save (T.m1 optim) (prefix ++ "M1.pt")
+    T.save (T.m2 optim) (prefix ++ "M2.pt")
+
+-- | Load Optimizer State
+loadOptim :: Int -> Float -> Float -> FilePath -> IO T.Adam
+loadOptim iter β1 β2 prefix = do
+    m1' <- T.load (prefix ++ "M1.pt")
+    m2' <- T.load (prefix ++ "M2.pt")
+    pure $ T.Adam β1 β2 m1' m2' iter
 
 ------------------------------------------------------------------------------
 -- Neural Networks
@@ -333,7 +351,7 @@ rescale x = x'
     x'    = (x - μ) / σ
 
 ------------------------------------------------------------------------------
--- Hym Server Interaction and Environment
+-- Hym Server Interaction and ACE Interaction
 ------------------------------------------------------------------------------
 
 -- | HTTP options for Hym server communication, sometimes simulations can take
@@ -404,9 +422,13 @@ hymPost url route payload = BL.toStrict . (^. Wreq.responseBody)
                          <$> postWith httpOptions (url ++ "/" ++ route) payload 
                          -- <$> post (url ++ "/" ++ route) payload 
 
--- | Convert a JSON Response from an ACE Server to a Map
+-- | Convert a JSON Response from an ACE Server to a Map: String Float
 hymPoolMap :: HymURL -> String -> IO (M.Map Int (M.Map String Float))
 hymPoolMap url route = fromJust . decodeStrict <$> hymGet url route
+
+-- | Convert a JSON Response from an ACE Server to a Map: String Bool
+hymPoolMap' :: HymURL -> String -> IO (M.Map Int (M.Map String Bool))
+hymPoolMap' url route = fromJust . decodeStrict <$> hymGet url route
 
 -- | Convert a JSON Response from an ACE Server to a Float-List
 hymPoolList :: HymURL -> String -> IO (M.Map Int [Float])
@@ -450,6 +472,15 @@ gymURL h p i v = "http://" ++ h ++ ":" ++ p ++ "/" ++ i ++ "-v" ++ v
 -- Obtain the Target of Pooled GACE Environments
 acePoolTarget :: HymURL -> IO (M.Map Int (M.Map String Float))
 acePoolTarget = flip hymPoolMap "target"
+
+-- | Send a GET Request to a GACE Server
+-- Obtain the Target Predicate of Pooled GACE Environments
+acePoolPredicate :: HymURL -> IO (M.Map Int (M.Map String Bool))
+acePoolPredicate = flip hymPoolMap' "predicate"
+
+-- | Get min/max estimates for performances and/or targets 
+acePoolScaler :: HymURL -> IO (M.Map Int (M.Map String [Float]))
+acePoolScaler url = fromJust . decodeStrict <$> hymGet url "scaler"
 
 -- | Action Keys from GACE Server
 acePoolActKeys :: HymURL -> IO (M.Map Int [String])
@@ -515,6 +546,18 @@ targetPool' url = processTarget <$>  hymPoolMap url targetRoute
   where
     targetRoute = "target"
 
+-- | Target parameter keys
+targetKeysPool :: HymURL -> IO [String]
+targetKeysPool url = M.keys . head . M.elems <$> hymPoolMap url targetRoute
+  where
+    targetRoute = "target"
+
+-- | Implying same target params for all envs in pool.
+scalerPool :: HymURL -> [String] -> IO T.Tensor
+scalerPool url keys = T.transpose2D . T.stack (T.Dim 0) . M.elems 
+                    . M.filterWithKey (\k _ -> k `elem` keys) 
+                    . M.map toTensor . head . M.elems <$> acePoolScaler url
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
@@ -531,19 +574,6 @@ randomStepPool url = stepsToTuple <$> hymPoolRandomStep url
 -- | Get a set of random actions from the current environment
 randomActionPool :: HymURL -> IO T.Tensor
 randomActionPool url = mapToTensor <$> hymPoolRandomAction url
-
--- | Optimizer moments at given prefix
-saveOptim :: T.Adam -> FilePath -> IO ()
-saveOptim optim prefix = do
-    T.save (T.m1 optim) (prefix ++ "M1.pt")
-    T.save (T.m2 optim) (prefix ++ "M2.pt")
-
--- | Load Optimizer State
-loadOptim :: Int -> Float -> Float -> FilePath -> IO T.Adam
-loadOptim iter β1 β2 prefix = do
-    m1' <- T.load (prefix ++ "M1.pt")
-    m2' <- T.load (prefix ++ "M2.pt")
-    pure $ T.Adam β1 β2 m1' m2' iter
 
 ------------------------------------------------------------------------------
 -- Data Processing
@@ -586,11 +616,49 @@ processTarget targetMap = tgt4
 
 -- | Process for HER returns processed observations, the target and the
 -- augmented target
+postProcess :: Info -> T.Tensor -> T.Tensor
+            -> (T.Tensor, T.Tensor, T.Tensor)
+postProcess Info{..} scaler obs = (states, target, target')
+  where
+    sMax    = indexSelect'' 0 [1] scaler
+    sMin    = indexSelect'' 0 [0] scaler
+    k2i kl  = T.toDType T.Int32 . toTensor 
+            . map (fromJust . flip elemIndex kl)
+    tk      = filter (isPrefixOf "target_") observations
+    ok      = map (fromJust . stripPrefix "target_") tk
+    keys    = ok ++ tk
+    idx     = k2i observations keys
+    idxObs  = k2i keys ok
+    idxTgt  = k2i keys tk
+    idxTgt' = k2i keys ok
+    keyAbs  = [ "A", "gm", "i_out_max", "i_out_max", "pm", "sr_f", "sr_r"
+              , "ugbw" , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz",
+              "vn_100Hz", "vn_1kHz", "vn_10kHz", "vn_100kHz"] :: [String]
+    mskAbs  = boolMask (length ok) 
+            $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` ok]
+    keyLog  = [ "A", "i_out_max", "i_out_max", "sr_f", "sr_r", "ugbw"
+              , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz", "vn_100Hz"
+              , "vn_1kHz", "vn_10kHz", "vn_100kHz"] :: [String]
+    mskLog  = boolMask (length ok) 
+            $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` ok]
+    obs'    = nanToNum'' $ T.indexSelect 1 idx obs
+    states  = normalize'' (-1.0) 1.0 sMin sMax
+            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+            $ T.indexSelect 1 idxObs  obs'
+    target  = normalize'' (-1.0) 1.0 sMin sMax
+            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+            $ T.indexSelect 1 idxTgt  obs'
+    target' = normalize'' (-1.0) 1.0 sMin sMax
+            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+            $ T.indexSelect 1 idxTgt' obs'
+
+-- | Process for HER returns processed observations, the target and the
+-- augmented target
 processGace'' :: T.Tensor -> Info -> (T.Tensor, T.Tensor, T.Tensor)
 processGace'' obs Info{..} = (states, target, target')
   where
-    k2i kl    = T.toDType T.Int32 . toTensor 
-              . map (fromJust . flip elemIndex kl)
+    k2i kl  = T.toDType T.Int32 . toTensor 
+            . map (fromJust . flip elemIndex kl)
     keys    = filter (\k -> ( (isLower . head $ k) 
                            -- \ || (k `elem` actions) 
                            || (k == "A") )
@@ -705,6 +773,36 @@ scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor')
   where
     factor' = toTensor factor
  
+-- | Normalize feature x s.t. x' ∈ [a,b]
+normalize :: Float -> Float -> T.Tensor -> T.Tensor
+normalize a b x = x' 
+  where
+    a' = toTensor a
+    b' = toTensor b
+    xMin = fst $ T.minDim (T.Dim 0) T.KeepDim x
+    xMax = fst $ T.maxDim (T.Dim 0) T.KeepDim x
+    x' = (b' - a') * ((x - xMin) / (xMax - xMin)) + a'
+
+-- | Convenience: Normalize feature x s.t. x' ∈ [-1.0,1.0]
+normalize' :: T.Tensor -> T.Tensor
+normalize' = normalize (-1.0) 1.0
+
+-- | Normalize given some arbitrary min / max values
+normalize'' :: Float -> Float -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
+normalize'' a b xMin xMax x = x' 
+  where
+    a' = toTensor a
+    b' = toTensor b
+    x' = (b' - a') * ((x - xMin) / (xMax - xMin)) + a'
+
+-- | Normalize feature x' ∈ [a,b] given the original min/max
+denormalize :: T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
+denormalize xMin xMax x' = x
+  where
+    a' = fst $ T.minDim (T.Dim 0) T.KeepDim x
+    b' = fst $ T.maxDim (T.Dim 0) T.KeepDim x
+    x = ((x' - a') / (b' - a')) * (xMax - xMin) + xMin
+
 ------------------------------------------------------------------------------
 -- Data Logging / Visualization
 ------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ module RPB.RPB ( Buffer (..)
                , pop
                , sample
                , sampleIO
-               , scaleStates
+               , standardizeState
                ) where
 
 import Lib
@@ -95,8 +95,8 @@ sampleIO batchSize buf = (`sample` buf)
     i' = toFloatGPU $ T.ones' [size buf]
 
 -- | Scale and clip states and states'
-scaleStates :: Float -> Buffer T.Tensor -> Buffer T.Tensor 
-scaleStates c Buffer{..} = buf'
+standardizeState :: Float -> Buffer T.Tensor -> Buffer T.Tensor 
+standardizeState c Buffer{..} = buf'
   where
     scaledStates  = T.clamp (- c) c $ rescale states
     scaledStates' = T.clamp (- c) c $ rescale states'

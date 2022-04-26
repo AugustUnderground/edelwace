@@ -38,6 +38,7 @@ import MLFlow               (TrackingURI)
 import Control.Monad
 import GHC.Generics
 import qualified Data.Set                  as S
+import qualified Data.Map                  as M
 import qualified Torch                     as T
 import qualified Torch.Functional.Internal as T (negative)
 import qualified Torch.NN                  as NN
@@ -74,7 +75,7 @@ instance T.Randomizable ActorNetSpec ActorNet where
                                              >>= weightInitUniform' )
                                        <*> ( T.sample (T.LinearSpec 64      64)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 64       64)
+                                       <*> ( T.sample (T.LinearSpec 64      64)
                                              >>= weightInitUniform' )
                                        <*> ( T.sample (T.LinearSpec 64  pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
@@ -348,27 +349,32 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    actions <- if iteration > 0
+    explore <- T.any . T.ge (toTensor ([0.2] :: [Float])) <$> T.randIO' [1]
+    actions <- (if (iteration > 0) || explore
                   then act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
-                          >>= T.detach
                   else randomActionPool envUrl
+               ) >>= T.detach
 
-    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
+    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions 
 
     let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
         keys    = head infos
         success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
-    (states', targets', targets'') <- if T.any dones 
-           then flip   processGace'' keys <$> resetPool' envUrl dones
-           else pure $ processGace'' states'' keys
+    targetPredicates <- head . M.elems <$> acePoolPredicate envUrl
+    scaler <- scalerPool envUrl (M.keys targetPredicates) 
 
-    let buffer' = HER.push bufferSize buffer states actions rewards states'
-                           dones targets' targets''
+    (states', targets', targets'') <- if T.any dones 
+           then postProcess keys scaler <$> resetPool' envUrl dones
+           else pure $ postProcess keys scaler states''
+
+    let predicate = HER.targetCriterion targetPredicates
+        buffer'   = HER.push bufferSize predicate buffer states actions 
+                             states' targets' targets''
 
     when (step < numSteps) do
-        _ <- trackLoss   tracker (iter' !! step) "Success" success
+        _ <- trackLoss tracker (iter' !! step) "Success" success
         pure ()
 
     _ <- trackReward tracker (iter' !! step) rewards
@@ -432,14 +438,16 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     let episodes = concatMap HER.epsSplit $ HER.envSplit numEnvs trajectories
 
+    predicate <- HER.targetCriterion . head . M.elems <$> acePoolPredicate envUrl
+
     buffer' <- if strategy == HER.Random
-                  then HER.sampleTargets strategy k relTol $ 
-                        foldl (HER.push' bufferSize) buffer episodes
+                  then HER.sampleTargets strategy k predicate $ 
+                             foldl (HER.push' bufferSize) buffer episodes
                   else foldM (\b b' -> HER.push' bufferSize b 
-                                   <$> HER.sampleTargets strategy k relTol b') 
+                                   <$> HER.sampleTargets strategy k predicate b') 
                              buffer episodes
 
-    let memory = RPB.scaleStates stateClip $ HER.asRPB buffer'
+    let memory = HER.asRPB buffer'
 
     !agent' <- updatePolicy iteration agent tracker memory numEpochs
     saveAgent ptPath agent 
