@@ -23,18 +23,19 @@ run Args{..} | notElem algorithm
     putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
     when (algorithm == show SAC.algorithm) do
-        SAC.train obs act url uri >>= SAC.saveAgent path
+        SAC.train obs act url uri >>= SAC.saveAgent path'
  
     when (algorithm == show TD3.algorithm) do
-        TD3.train obs act url uri >>= TD3.saveAgent path
+        TD3.train obs act url uri >>= TD3.saveAgent path'
  
     when (algorithm == show PPO.algorithm) do
-        PPO.train obs act url uri >>= PPO.saveAgent path
+        PPO.train obs act url uri >>= PPO.saveAgent path'
 
     putStrLn $ "Training " ++ algorithm ++ " Agent finished."
   where
-    url = aceURL host port ace pdk var
-    uri = MLF.trackingURI mlfHost mlfPort
+    path' = path ++ "/"  ++ algorithm
+    url   = aceURL host port ace pdk var
+    uri   = MLF.trackingURI mlfHost mlfPort
 
 -- | Main
 main :: IO ()
