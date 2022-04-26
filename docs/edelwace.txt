@@ -43,6 +43,9 @@ fullLike' :: Tensor -> Float -> Tensor
 -- | Select index with [Int] from GPU tensor
 indexSelect'' :: Int -> [Int] -> Tensor -> Tensor
 
+-- | Torch.where' with fixed type for where'
+where'' :: Tensor -> (Tensor -> Tensor) -> Tensor -> Tensor
+
 -- | Syntactic sugar for HaskTorch's <tt>repeatInterleave</tt> so it can
 --   more easily be fmapped.
 repeatInterleave' :: Int -> Tensor -> Tensor -> Tensor
@@ -73,6 +76,12 @@ currentTimeStamp' :: IO String
 
 -- | Create a model archive directory for the given algorithm
 createModelArchiveDir :: String -> IO String
+
+-- | Optimizer moments at given prefix
+saveOptim :: Adam -> FilePath -> IO ()
+
+-- | Load Optimizer State
+loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
 
 -- | Calculate weight Limits based on Layer Dimensions
 weightLimit :: Linear -> Float
@@ -235,8 +244,11 @@ hymGet :: HymURL -> String -> IO ByteString
 -- | Send a POST Request to a Hym Server
 hymPost :: HymURL -> String -> Value -> IO ByteString
 
--- | Convert a JSON Response from an ACE Server to a Map
+-- | Convert a JSON Response from an ACE Server to a Map: String Float
 hymPoolMap :: HymURL -> String -> IO (Map Int (Map String Float))
+
+-- | Convert a JSON Response from an ACE Server to a Map: String Bool
+hymPoolMap' :: HymURL -> String -> IO (Map Int (Map String Bool))
 
 -- | Convert a JSON Response from an ACE Server to a Float-List
 hymPoolList :: HymURL -> String -> IO (Map Int [Float])
@@ -268,6 +280,13 @@ gymURL :: String -> String -> String -> String -> HymURL
 -- | Send a GET Request to a GACE Server Obtain the Target of Pooled GACE
 --   Environments
 acePoolTarget :: HymURL -> IO (Map Int (Map String Float))
+
+-- | Send a GET Request to a GACE Server Obtain the Target Predicate of
+--   Pooled GACE Environments
+acePoolPredicate :: HymURL -> IO (Map Int (Map String Bool))
+
+-- | Get min<i>max estimates for performances and</i>or targets
+acePoolScaler :: HymURL -> IO (Map Int (Map String [Float]))
 
 -- | Action Keys from GACE Server
 acePoolActKeys :: HymURL -> IO (Map Int [String])
@@ -305,6 +324,12 @@ targetPool :: HymURL -> IO Tensor
 -- | Get Targets for all envs in Pool and process them
 targetPool' :: HymURL -> IO Tensor
 
+-- | Target parameter keys
+targetKeysPool :: HymURL -> IO [String]
+
+-- | Implying same target params for all envs in pool.
+scalerPool :: HymURL -> [String] -> IO Tensor
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> Tensor -> IO (Tensor, Tensor, Tensor, [Info])
 
@@ -317,12 +342,6 @@ randomStepPool :: HymURL -> IO (Tensor, Tensor, Tensor, [Info])
 -- | Get a set of random actions from the current environment
 randomActionPool :: HymURL -> IO Tensor
 
--- | Optimizer moments at given prefix
-saveOptim :: Adam -> FilePath -> IO ()
-
--- | Load Optimizer State
-loadOptim :: Int -> Float -> Float -> FilePath -> IO Adam
-
 -- | Create Boolean Mask Tensor from list of indices.
 boolMask :: Int -> [Int] -> Tensor
 
@@ -331,6 +350,10 @@ boolMask' :: Int -> Tensor -> Tensor
 
 -- | Process Targets for HER
 processTarget :: Map Int (Map String Float) -> Tensor
+
+-- | Process for HER returns processed observations, the target and the
+--   augmented target
+postProcess :: Info -> Tensor -> Tensor -> (Tensor, Tensor, Tensor)
 
 -- | Process for HER returns processed observations, the target and the
 --   augmented target
@@ -344,6 +367,18 @@ processGace :: Tensor -> Info -> Tensor
 
 -- | Scale reward to center
 scaleRewards :: Tensor -> Float -> Tensor
+
+-- | Normalize feature x s.t. x' ∈ [a,b]
+normalize :: Float -> Float -> Tensor -> Tensor
+
+-- | Convenience: Normalize feature x s.t. x' ∈ [-1.0,1.0]
+normalize' :: Tensor -> Tensor
+
+-- | Normalize given some arbitrary min / max values
+normalize'' :: Float -> Float -> Tensor -> Tensor -> Tensor -> Tensor
+
+-- | Normalize feature x' ∈ [a,b] given the original min/max
+denormalize :: Tensor -> Tensor -> Tensor -> Tensor
 
 -- | Sanatize JSON for MLFlow: Names may only contain alphanumerics,
 --   underscores (_), dashes (-), periods (.), spaces ( ), and slashes (/).
@@ -752,7 +787,7 @@ sample :: Tensor -> Buffer Tensor -> Buffer Tensor
 sampleIO :: Int -> Buffer Tensor -> IO (Buffer Tensor)
 
 -- | Scale and clip states and states'
-scaleStates :: Float -> Buffer Tensor -> Buffer Tensor
+standardizeState :: Float -> Buffer Tensor -> Buffer Tensor
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.RPB.Buffer a)
 instance GHC.Show.Show a => GHC.Show.Show (RPB.RPB.Buffer a)
 instance GHC.Base.Functor RPB.RPB.Buffer
@@ -862,8 +897,8 @@ empty :: Buffer Tensor
 -- | How many Trajectories are currently stored in memory
 size :: Buffer Tensor -> Int
 
--- | Push new memories into Buffer
-push :: Int -> Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Buffer Tensor
+-- | Calculate reward and done and Push new memories into Buffer
+push :: Int -> Tensor -> Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Buffer Tensor
 
 -- | Push one buffer into another one
 push' :: Int -> Buffer Tensor -> Buffer Tensor -> Buffer Tensor
@@ -885,14 +920,11 @@ sample :: Tensor -> Buffer Tensor -> Buffer Tensor
 --   give it the entire buffer, not just the episode.
 sampleTargets :: Strategy -> Int -> Tensor -> Buffer Tensor -> IO (Buffer Tensor)
 
--- | Calculate reward for new targets given a relative tolerance
-newReward :: Tensor -> Tensor -> Tensor -> Tensor
-
--- | Augment by changing acheived target, done flag and reward
-augmentTarget :: Tensor -> Tensor -> Buffer Tensor -> Buffer Tensor
-
 -- | Convert HER Buffer to RPB for training
 asRPB :: Buffer Tensor -> Buffer Tensor
+
+-- | Convert target predicate map to boolean mask tensor
+targetCriterion :: Map String Bool -> Tensor
 instance GHC.Classes.Eq RPB.HER.Strategy
 instance GHC.Show.Show RPB.HER.Strategy
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.HER.Buffer a)
