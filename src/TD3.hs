@@ -349,13 +349,12 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    explore <- T.any . T.ge (toTensor ([0.2] :: [Float])) <$> T.randIO' [1]
-    actions <- (if (iteration > 0) || explore
+    explore <- T.any . T.ge (T.asTensor ([0.2] :: [Float])) <$> T.randIO' [1]
+    actions <- if (iteration > 0) || explore
                   then act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
                   else randomActionPool envUrl
-               ) >>= T.detach
 
-    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions 
+    (!states'', !rewards, !dones, !infos) <- T.detach actions >>= stepPool envUrl
 
     let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
@@ -384,8 +383,8 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
-        putStrLn $ "\tStep " ++ show step ++ ", Average Reward: \t" 
-                             ++ show (T.mean rewards)
+        putStrLn $ "\tStep " ++ show step ++ ", Average Success: \t" 
+                             ++ show (100.0 * success) ++ "%"
 
     evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
                       states' targets' buffer'
@@ -471,7 +470,9 @@ train' envUrl tracker RPB agent = do
 train' envUrl tracker HER agent = do
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
-    let (states, targets, _) = processGace'' states' keys
+    preds   <- head . M.elems <$> acePoolPredicate envUrl
+    scaler  <- scalerPool envUrl (M.keys preds) 
+    let (states, targets, _) = postProcess keys scaler states'
     runAlgorithmHER 0 agent envUrl tracker False HER.mkBuffer targets states 
 train' _ _ _ _ = undefined
 
