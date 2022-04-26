@@ -642,13 +642,13 @@ postProcess Info{..} scaler obs = (states, target, target')
     mskLog  = boolMask (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` ok]
     obs'    = nanToNum'' $ T.indexSelect 1 idx obs
-    states  = normalize'' (-1.0) 1.0 sMin sMax
+    states  = T.tanh . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
             . where'' mskLog T.log10 . where'' mskAbs T.abs 
             $ T.indexSelect 1 idxObs  obs'
-    target  = normalize'' (-1.0) 1.0 sMin sMax
+    target  = T.tanh . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
             . where'' mskLog T.log10 . where'' mskAbs T.abs 
             $ T.indexSelect 1 idxTgt  obs'
-    target' = normalize'' (-1.0) 1.0 sMin sMax
+    target' = T.tanh . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
             . where'' mskLog T.log10 . where'' mskAbs T.abs 
             $ T.indexSelect 1 idxTgt' obs'
 

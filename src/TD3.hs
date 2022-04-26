@@ -349,10 +349,10 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    explore <- T.any . T.ge (T.asTensor ([0.2] :: [Float])) <$> T.randIO' [1]
-    actions <- if (iteration > 0) || explore
-                  then act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
-                  else randomActionPool envUrl
+    explore <- T.all . T.ge (T.asTensor ([0.2] :: [Float])) <$> T.randIO' [1]
+    actions <- if iteration <= 0 || explore
+                  then nanToNum' <$> randomActionPool envUrl
+                  else act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
 
     (!states'', !rewards, !dones, !infos) <- T.detach actions >>= stepPool envUrl
 
@@ -361,14 +361,14 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         keys    = head infos
         success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
-    targetPredicates <- head . M.elems <$> acePoolPredicate envUrl
-    scaler <- scalerPool envUrl (M.keys targetPredicates) 
+    preds  <- head . M.elems <$> acePoolPredicate envUrl
+    scaler <- scalerPool envUrl (M.keys preds) 
 
     (states', targets', targets'') <- if T.any dones 
            then postProcess keys scaler <$> resetPool' envUrl dones
            else pure $ postProcess keys scaler states''
 
-    let predicate = HER.targetCriterion targetPredicates
+    let predicate = HER.targetCriterion preds
         buffer'   = HER.push bufferSize predicate buffer states actions 
                              states' targets' targets''
 
@@ -451,8 +451,10 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     !agent' <- updatePolicy iteration agent tracker memory numEpochs
     saveAgent ptPath agent 
 
-    keys <- infoPool envUrl
-    (states', targets', _) <- flip processGace'' keys <$> resetPool envUrl
+    keys   <- infoPool envUrl
+    preds  <- head . M.elems <$> acePoolPredicate envUrl
+    scaler <- scalerPool envUrl (M.keys preds) 
+    (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
 
     runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
   where

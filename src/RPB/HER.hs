@@ -11,6 +11,7 @@ module RPB.HER ( Strategy (..)
                , push
                , push'
                , drop'
+               , drop
                , envSplit
                , epsSplit
                , sample
@@ -23,9 +24,10 @@ import           Lib                       hiding (Info(..))
 import qualified RPB.RPB                   as RPB
 
 import           Control.Monad
+import Prelude                             hiding (drop)
 import qualified Data.Map                  as M
 import qualified Torch                     as T
-import qualified Torch.Functional.Internal as T (negative, where', negative)
+import qualified Torch.Functional.Internal as T (negative, where')
 
 ------------------------------------------------------------------------------
 -- Hindsight Experience Replay
@@ -107,7 +109,7 @@ targetCriterion crit = preds
 -- | Calculate reward and done and Push new memories into Buffer
 push :: Int -> T.Tensor -> Buffer T.Tensor-> T.Tensor -> T.Tensor
      -> T.Tensor -> T.Tensor -> T.Tensor -> Buffer T.Tensor
-push cap prd (Buffer s a r n d t g) s' a' n' t' g' = RPB.HER.drop cap buf
+push cap prd (Buffer s a r n d t g) s' a' n' t' g' = drop cap buf
   where
     dim = T.Dim 0
     (r', d') = process prd n' t'
@@ -122,7 +124,7 @@ push cap prd (Buffer s a r n d t g) s' a' n' t' g' = RPB.HER.drop cap buf
 
 -- | Push one buffer into another one
 push' :: Int -> Buffer T.Tensor -> Buffer T.Tensor -> Buffer T.Tensor
-push' cap Buffer{..} (Buffer s a r s' d t t') = RPB.HER.drop cap buf
+push' cap Buffer{..} (Buffer s a r s' d t t') = drop cap buf
   where
     dim = T.Dim 0
     s'' = T.cat dim [states  , s]
@@ -149,11 +151,19 @@ envSplit ne buf = map (`sample` buf) idx
 
 -- | Split a buffer into episodes, dropping the last unfinished
 epsSplit :: Buffer T.Tensor -> [Buffer T.Tensor]
-epsSplit buf@Buffer{..} = map (\i -> fmap (T.indexSelect 0 i) buf) d
+epsSplit buf@(Buffer s a r s' d t t') = 
+    if T.any d 
+       then map (\i -> fmap (T.indexSelect 0 i) buf) dix
+       else [Buffer s a r s' d' t t']
   where
-    d'' = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
-    d'  = T.asValue d'' :: [Int]
-    d   = splits' (0:d')
+    opts   = T.withDType T.Int64 . T.withDevice gpu $ T.defaultOpts
+    finIdx = T.asTensor' ([[pred . head $ T.shape d]] :: [[Int]]) opts
+    finVal = toTensor ([1.0] :: [Float])
+    d'     = if T.any d
+                then d
+                else T.indexPut False [finIdx] finVal d
+    d''    = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ d'
+    dix    = splits' (0:(T.asValue d'' :: [Int]))
 
 -- | Sample Additional Goals according to Strategy (drop first). `Random` is
 -- basically the same as `Episode` you just have to give it the entire buffer,
