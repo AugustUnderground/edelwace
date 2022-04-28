@@ -903,8 +903,14 @@ push :: Int -> Tensor -> Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -
 -- | Push one buffer into another one
 push' :: Int -> Buffer Tensor -> Buffer Tensor -> Buffer Tensor
 
+-- | Alternative Push if tensors are not in a buffer yet
+push'' :: Int -> Buffer Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Tensor -> Buffer Tensor
+
 -- | Drop everything after last done (used for single episode)
 drop' :: Buffer Tensor -> Buffer Tensor
+
+-- | Drop number of entries from the beginning of the Buffer
+drop :: Int -> Buffer Tensor -> Buffer Tensor
 
 -- | Split buffer collected from pool by env
 envSplit :: Int -> Buffer Tensor -> [Buffer Tensor]
@@ -1311,23 +1317,24 @@ CriticNetSpec :: Int -> Int -> CriticNetSpec
 
 -- | Actor Network Architecture
 data ActorNet
-ActorNet :: Linear -> Linear -> Linear -> Linear -> ActorNet
+ActorNet :: Linear -> Linear -> Linear -> ActorNet
 [pLayer0] :: ActorNet -> Linear
 [pLayer1] :: ActorNet -> Linear
 [pLayer2] :: ActorNet -> Linear
-[pLayer3] :: ActorNet -> Linear
 
 -- | Critic Network Architecture
 data CriticNet
-CriticNet :: Linear -> Linear -> Linear -> Linear -> CriticNet
-[qLayer0] :: CriticNet -> Linear
-[qLayer1] :: CriticNet -> Linear
-[qLayer2] :: CriticNet -> Linear
-[qLayer3] :: CriticNet -> Linear
+CriticNet :: Linear -> Linear -> Linear -> Linear -> Linear -> Linear -> CriticNet
+[q1Layer0] :: CriticNet -> Linear
+[q1Layer1] :: CriticNet -> Linear
+[q1Layer2] :: CriticNet -> Linear
+[q2Layer0] :: CriticNet -> Linear
+[q2Layer1] :: CriticNet -> Linear
+[q2Layer2] :: CriticNet -> Linear
 
 -- | TD3 Agent
 data Agent
-Agent :: ActorNet -> ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNet -> Adam -> Adam -> Adam -> Agent
+Agent :: ActorNet -> ActorNet -> CriticNet -> CriticNet -> Adam -> Adam -> Agent
 
 -- | Online Policy φ
 [φ] :: Agent -> ActorNet
@@ -1335,26 +1342,17 @@ Agent :: ActorNet -> ActorNet -> CriticNet -> CriticNet -> CriticNet -> CriticNe
 -- | Target Policy φ'
 [φ'] :: Agent -> ActorNet
 
--- | Online Critic θ1
-[θ1] :: Agent -> CriticNet
+-- | Online Critic θ
+[θ] :: Agent -> CriticNet
 
--- | Online Critic θ2
-[θ2] :: Agent -> CriticNet
-
--- | Target Critic θ1
-[θ1'] :: Agent -> CriticNet
-
--- | Target Critic θ2
-[θ2'] :: Agent -> CriticNet
+-- | Target Critic θ
+[θ'] :: Agent -> CriticNet
 
 -- | Policy Optimizer
 [φOptim] :: Agent -> Adam
 
--- | Critic 1 Optimizer
-[θ1Optim] :: Agent -> Adam
-
--- | Critic 2 Optimizer
-[θ2Optim] :: Agent -> Adam
+-- | Critic Optimizer
+[θOptim] :: Agent -> Adam
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
@@ -1372,10 +1370,10 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 π :: ActorNet -> Tensor -> Tensor
 
 -- | Critic Network Forward Pass
-q :: CriticNet -> Tensor -> Tensor -> Tensor
+q :: CriticNet -> Tensor -> Tensor -> [Tensor]
 
 -- | Convenience Function, takes the minimum of both online actors
-q' :: CriticNet -> CriticNet -> Tensor -> Tensor -> Tensor
+q' :: CriticNet -> Tensor -> Tensor -> Tensor
 
 -- | Get action from online policy with naive / static Exploration Noise
 act :: Agent -> Tensor -> IO Tensor
