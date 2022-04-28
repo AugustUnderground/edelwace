@@ -137,7 +137,13 @@ splits []       = []
 
 -- | Helper function creating split indices as gpu int tensor
 splits' :: [Int] -> [T.Tensor]
-splits' = map toIntTensor . splits
+splits' = map toIntTensor' . splits
+
+-- | Split Tensor into list of Tensors along dimension
+splitDim :: Int -> T.Tensor -> [T.Tensor]
+splitDim dim self = T.chunk size (T.Dim dim) self
+    where
+      size = T.shape self !! dim
 
 ------------------------------------------------------------------------------
 -- File System
@@ -273,17 +279,29 @@ cpu = T.Device T.CPU 0
 dataType :: T.DType
 dataType = T.Float
 
--- | Convert an Array to a Tensor
+-- | Convert an Array to a Tensor on GPU
 toTensor :: T.TensorLike a => a -> T.Tensor
 toTensor t = T.asTensor' t opts
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
 
--- | Convert an Array to a Tensor
+-- | Convert an Array to a Tensor on CPU
+toTensor' :: T.TensorLike a => a -> T.Tensor
+toTensor' t = T.asTensor' t opts
+  where
+    opts = T.withDType dataType . T.withDevice cpu $ T.defaultOpts
+
+-- | Convert an Array to a Tensor on GPU
 toIntTensor :: T.TensorLike a => a -> T.Tensor
 toIntTensor t = T.asTensor' t opts
   where
     opts = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+
+-- | Convert an Array to a Tensor on CPU
+toIntTensor' :: T.TensorLike a => a -> T.Tensor
+toIntTensor' t = T.asTensor' t opts
+  where
+    opts = T.withDType T.Int32 . T.withDevice cpu $ T.defaultOpts
 
 -- | Create an empty Float Tensor on GPU
 emptyTensor :: T.Tensor
@@ -291,17 +309,35 @@ emptyTensor = T.asTensor' ([] :: [Float]) opts
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
 
--- | Convert a Scalar to a Tensor
+-- | Create an empty Float Tensor on CPU
+emptyTensor' :: T.Tensor
+emptyTensor' = T.asTensor' ([] :: [Float]) opts
+  where
+    opts = T.withDType dataType . T.withDevice cpu $ T.defaultOpts
+
+-- | Convert a Scalar to a Tensor on GPU
 toScalar :: Float -> T.Tensor
 toScalar t = T.asTensor' t opts
   where
     opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
+
+-- | Convert a Scalar to a Tensor on CPU
+toScalar' :: Float -> T.Tensor
+toScalar' t = T.asTensor' t opts
+  where
+    opts = T.withDType dataType . T.withDevice cpu $ T.defaultOpts
 
 -- | Convert model to Double on GPU
 toDoubleGPU :: forall a. TL.HasTypes a T.Tensor => a -> a
 toDoubleGPU = TL.over (TL.types @ T.Tensor @a) opts
   where
     opts = T.toDevice gpu . T.toType T.Double
+
+-- | Convert model to Double on CPU
+toDoubleGPU' :: forall a. TL.HasTypes a T.Tensor => a -> a
+toDoubleGPU' = TL.over (TL.types @ T.Tensor @a) opts
+  where
+    opts = T.toDevice cpu . T.toType T.Double
 
 -- | Convert model to Float on CPU
 toFloatGPU :: forall a. TL.HasTypes a T.Tensor => a -> a
@@ -313,17 +349,23 @@ toFloatGPU = TL.over (TL.types @ T.Tensor @a) opts
 toFloatCPU :: forall a. TL.HasTypes a T.Tensor => a -> a
 toFloatCPU = over (TL.types @ T.Tensor @a) opts
   where
-    opts = T.toDevice gpu . T.toType T.Float
+    opts = T.toDevice cpu . T.toType T.Float
 
 ------------------------------------------------------------------------------
 -- Statistics
 ------------------------------------------------------------------------------
 
--- | Generate a Tensor of random Integers
+-- | Generate a Tensor of random Integers on GPU
 randomInts :: Int -> Int -> Int -> IO T.Tensor
 randomInts lo hi num = T.randintIO lo hi [num] opts 
   where
     opts = T.withDType T.Int64 . T.withDevice gpu $ T.defaultOpts
+
+-- | Generate a Tensor of random Integers on CPU
+randomInts' :: Int -> Int -> Int -> IO T.Tensor
+randomInts' lo hi num = T.randintIO lo hi [num] opts 
+  where
+    opts = T.withDType T.Int64 . T.withDevice cpu $ T.defaultOpts
 
 -- | Generate Normally Distributed Random values given dimensions
 normal' :: [Int] -> IO T.Tensor
@@ -388,19 +430,23 @@ data ActionSpace = Continuous -- ^ Continuous Action Space
                  | Discrete   -- ^ Discrete Action Space
     deriving (Show, Eq)
 
--- | Convert a Map to a Tensor where Pool index is a dimension
+-- | Convert a Map to a Tensor where Pool index is a dimension on GPU
 mapToTensor :: M.Map Int [Float] -> T.Tensor
 mapToTensor = toTensor . M.elems
 
--- | Convert Tensor to Map (Continuous action spaces)
+-- | Convert a Map to a Tensor where Pool index is a dimension on CPU
+mapToTensor' :: M.Map Int [Float] -> T.Tensor
+mapToTensor' = T.asTensor . M.elems
+
+-- | Convert Tensor to Map (Continuous action spaces) on GPU
 tensorToMap :: T.Tensor -> M.Map Int [Float]
 tensorToMap = M.fromList . zip [0 .. ] . T.asValue
 
--- | Convert Tensor to Map (Discrete action spaces)
+-- | Convert Tensor to Map (Discrete action spaces) on CPU
 tensorToMap' :: T.Tensor -> M.Map Int Int
 tensorToMap' = M.fromList . zip [0 .. ] . T.asValue
 
--- | Convert the Pooled Step Map to a Tuple
+-- | Convert the Pooled Step Map to a Tuple on GPU
 stepsToTuple :: M.Map Int Step -> (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepsToTuple steps = (obs, rew, don, inf)
   where
@@ -409,6 +455,17 @@ stepsToTuple steps = (obs, rew, don, inf)
     rew  = T.reshape [-1,1] . toTensor . M.elems . M.map reward           $ steps
     don  = T.reshape [-1,1] . (`T.asTensor'` opts) . M.elems . M.map done $ steps
     inf  =                               M.elems . M.map info             $ steps
+
+-- | Convert the Pooled Step Map to a Tuple on CPU
+stepsToTuple' :: M.Map Int Step -> (T.Tensor, T.Tensor, T.Tensor, [Info])
+stepsToTuple' steps = (obs, rew, don, inf)
+  where
+    opts = T.withDType T.Bool . T.withDevice cpu $ T.defaultOpts
+    obs  =                    T.asTensor . M.elems . M.map observation    $ steps
+    rew  = T.reshape [-1,1] . T.asTensor . M.elems . M.map reward         $ steps
+    don  = T.reshape [-1,1] . (`T.asTensor'` opts) . M.elems . M.map done $ steps
+    inf  =                                 M.elems . M.map info           $ steps
+
 
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO BS.ByteString
@@ -500,11 +557,11 @@ shaceLogPath url = fromJust . M.lookup "path" <$> shaceLogPath' url
 
 -- | Reset a Vectorized Environment Pool
 resetPool :: HymURL -> IO T.Tensor
-resetPool url = mapToTensor <$> hymPoolReset url
+resetPool url = mapToTensor' <$> hymPoolReset url
 
 -- | Reset selected Environments from Pool
 resetPool' :: HymURL -> T.Tensor -> IO T.Tensor
-resetPool' url mask = mapToTensor . fromJust . decodeStrict 
+resetPool' url mask = mapToTensor' . fromJust . decodeStrict 
                    <$> hymPost url "reset" payload
   where
     mask' = T.asValue (T.squeezeAll mask) :: [Bool]
@@ -536,13 +593,13 @@ infoPool url = do
 
 -- | Get Targets for all envs in Pool
 targetPool :: HymURL -> IO T.Tensor
-targetPool url = toTensor . map M.elems . M.elems <$> hymPoolMap url targetRoute
+targetPool url = T.asTensor . map M.elems . M.elems <$> hymPoolMap url targetRoute
   where
     targetRoute = "target"
 
 -- | Get Targets for all envs in Pool and process them
 targetPool' :: HymURL -> IO T.Tensor
-targetPool' url = processTarget <$>  hymPoolMap url targetRoute
+targetPool' url = processTarget <$> hymPoolMap url targetRoute
   where
     targetRoute = "target"
 
@@ -556,16 +613,16 @@ targetKeysPool url = M.keys . head . M.elems <$> hymPoolMap url targetRoute
 scalerPool :: HymURL -> [String] -> IO T.Tensor
 scalerPool url keys = T.transpose2D . T.stack (T.Dim 0) . M.elems 
                     . M.filterWithKey (\k _ -> k `elem` keys) 
-                    . M.map toTensor . head . M.elems <$> acePoolScaler url
+                    . M.map T.asTensor . head . M.elems <$> acePoolScaler url
 
 -- | Implying same target params for all envs in pool and we want all of them.
 scalerPool' :: HymURL -> IO T.Tensor
 scalerPool' url = T.transpose2D . T.stack (T.Dim 0) . M.elems 
-                . M.map toTensor . head . M.elems <$> acePoolScaler url
+                . M.map T.asTensor . head . M.elems <$> acePoolScaler url
 
 -- | Step in a Control Environment
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
-stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
+stepPool url action = stepsToTuple' <$> hymPoolStep url (tensorToMap action)
 
 -- | Step in a Discrete Environment
 stepPool' :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
@@ -574,11 +631,11 @@ stepPool' url action = stepsToTuple
 
 -- | Take a random Step an Environment
 randomStepPool :: HymURL -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
-randomStepPool url = stepsToTuple <$> hymPoolRandomStep url
+randomStepPool url = stepsToTuple' <$> hymPoolRandomStep url
 
 -- | Get a set of random actions from the current environment
 randomActionPool :: HymURL -> IO T.Tensor
-randomActionPool url = mapToTensor <$> hymPoolRandomAction url
+randomActionPool url = mapToTensor' <$> hymPoolRandomAction url
 
 ------------------------------------------------------------------------------
 -- Data Processing
@@ -589,6 +646,12 @@ boolMask :: Int -> [Int] -> T.Tensor
 boolMask len idx = mask
   where
     mask = T.toDType T.Bool . toTensor $ map (`elem` idx) [0 .. (len - 1)]
+
+-- | Create Boolean Mask Tensor from list of indices on CPU.
+boolMask'' :: Int -> [Int] -> T.Tensor
+boolMask'' len idx = mask
+  where
+    mask = T.toDType T.Bool . T.asTensor $ map (`elem` idx) [0 .. (len - 1)]
 
 -- | Create a Boolean Mask Tensor from index Tensor
 boolMask' :: Int -> T.Tensor -> T.Tensor
@@ -621,13 +684,10 @@ processTarget targetMap = tgt4
 
 -- | Process for HER returns processed observations, the target and the
 -- augmented target
-postProcess :: Info -> T.Tensor -> T.Tensor
-            -> (T.Tensor, T.Tensor, T.Tensor)
+postProcess :: Info -> T.Tensor -> T.Tensor -> (T.Tensor, T.Tensor, T.Tensor)
 postProcess Info{..} scaler obs = (states, target, target')
   where
-    sMax    = indexSelect'' 0 [1] scaler
-    sMin    = indexSelect'' 0 [0] scaler
-    k2i kl  = T.toDType T.Int32 . toTensor . map (fromJust . flip elemIndex kl)
+    k2i kl  = T.toDType T.Int32 . T.asTensor . map (fromJust . flip elemIndex kl)
     tk      = filter (isPrefixOf "target_") observations
     tk'     = map (fromJust . stripPrefix "target_") tk
     ok      = filter (\k -> ((isLower . head $ k) || (k == "A"))
@@ -642,25 +702,37 @@ postProcess Info{..} scaler obs = (states, target, target')
     idxObs  = k2i keys ok
     idxTgt  = k2i keys tk
     idxTgt' = k2i keys tk'
+    idxSt   = k2i ok tk'
+    sMin    = indexSelect'' 0 [0] scaler
+    sMax    = indexSelect'' 0 [1] scaler
+    sMin'   = T.indexSelect 1 idxSt sMin
+    sMax'   = T.indexSelect 1 idxSt sMax
     keyAbs  = [ "A", "gm", "i_out_max", "i_out_max", "pm", "sr_f", "sr_r"
               , "ugbw" , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz"
               , "vn_100Hz", "vn_1kHz", "vn_10kHz", "vn_100kHz"]
-    mskAbs  = boolMask (length ok) 
+    mskAbs  = boolMask'' (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` ok]
+    mskAbs' = boolMask'' (length tk') 
+            $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` tk']
     keyLog  = [ "A", "i_out_max", "i_out_max", "sr_f", "sr_r", "ugbw"
               , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz", "vn_100Hz"
               , "vn_1kHz", "vn_10kHz", "vn_100kHz"]
-    mskLog  = boolMask (length ok) 
+    mskLog  = boolMask'' (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` ok]
+    mskLog' = boolMask'' (length tk') 
+            $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` tk']
     obs'    = nanToNum'' $ T.indexSelect 1 idx obs
-    states  = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
+    states  = T.clamp (-2.0) 2.0 . nanToNum'' 
+            . normalize'' (-1.0) 1.0 sMin sMax
             . where'' mskLog T.log10 . where'' mskAbs T.abs 
             $ T.indexSelect 1 idxObs  obs'
-    target  = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
-            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+    target  = T.clamp (-2.0) 2.0 . nanToNum'' 
+            . normalize'' (-1.0) 1.0 sMin' sMax'
+            . where'' mskLog' T.log10 . where'' mskAbs' T.abs 
             $ T.indexSelect 1 idxTgt  obs'
-    target' = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax
-            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+    target' = T.clamp (-2.0) 2.0 . nanToNum'' 
+            . normalize'' (-1.0) 1.0 sMin' sMax'
+            . where'' mskLog' T.log10 . where'' mskAbs' T.abs 
             $ T.indexSelect 1 idxTgt' obs'
 
 -- | Process for HER returns processed observations, the target and the
@@ -782,14 +854,14 @@ processGace obs Info{..} =  nanToNum'' $ T.cat (T.Dim 1) [states, steps]
 scaleRewards :: T.Tensor -> Float -> T.Tensor
 scaleRewards reward factor = (reward - T.mean reward) / (T.std reward + factor')
   where
-    factor' = toTensor factor
+    factor' = T.asTensor factor
  
 -- | Normalize feature x s.t. x' ∈ [a,b]
 normalize :: Float -> Float -> T.Tensor -> T.Tensor
 normalize a b x = x' 
   where
-    a' = toTensor a
-    b' = toTensor b
+    a' = T.asTensor a
+    b' = T.asTensor b
     xMin = fst $ T.minDim (T.Dim 0) T.KeepDim x
     xMax = fst $ T.maxDim (T.Dim 0) T.KeepDim x
     x' = (b' - a') * ((x - xMin) / (xMax - xMin)) + a'
@@ -802,8 +874,8 @@ normalize' = normalize (-1.0) 1.0
 normalize'' :: Float -> Float -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor
 normalize'' a b xMin xMax x = x' 
   where
-    a' = toTensor a
-    b' = toTensor b
+    a' = T.asTensor a
+    b' = T.asTensor b
     x' = (b' - a') * ((x - xMin) / (xMax - xMin)) + a'
 
 -- | Normalize feature x' ∈ [a,b] given the original min/max

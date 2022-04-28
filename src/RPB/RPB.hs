@@ -34,11 +34,11 @@ data Buffer a = Buffer { states  :: !a   -- ^ States
 instance Functor Buffer where
   fmap f (Buffer s a r s' d) = Buffer (f s) (f a) (f r) (f s') (f d)
 
--- | Create a new, empty Buffer on the GPU
+-- | Create a new, empty Buffer on the CPU
 mkBuffer :: Buffer T.Tensor
 mkBuffer = Buffer ft ft ft ft bt
   where
-    opts = T.withDType dataType . T.withDevice gpu $ T.defaultOpts
+    opts = T.withDType dataType . T.withDevice cpu $ T.defaultOpts
     ft   = T.asTensor' ([] :: [Float]) opts
     bt   = T.asTensor' ([] :: [Bool]) opts
 
@@ -54,7 +54,7 @@ size = head . T.shape . states
 drop :: Int -> Buffer T.Tensor -> Buffer T.Tensor
 drop cap buf = fmap (T.indexSelect 0 idx) buf
   where
-    opts  = T.withDType T.Int32 . T.withDevice gpu $ T.defaultOpts
+    opts  = T.withDType T.Int32 . T.withDevice cpu $ T.defaultOpts
     len   = size buf
     idx   = if len < cap
                then T.arange      0      len 1 opts
@@ -92,7 +92,7 @@ sampleIO :: Int -> Buffer T.Tensor -> IO (Buffer T.Tensor)
 sampleIO batchSize buf = (`sample` buf)
                                 <$> T.multinomialIO i' batchSize False
   where
-    i' = toFloatGPU $ T.ones' [size buf]
+    i' = toFloatCPU $ T.ones' [size buf]
 
 -- | Scale and clip states and states'
 standardizeState :: Float -> Buffer T.Tensor -> Buffer T.Tensor 

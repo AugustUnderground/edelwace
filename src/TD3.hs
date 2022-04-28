@@ -238,7 +238,7 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
         putStrLn $ "\t\tΘ Loss:\t" ++ show jQ
     _ <- trackLoss tracker (iter' !! epoch') "Critic_Loss" (T.asValue jQ :: Float)
 
-    (φOnline', φOptim') <- if iteration `mod` d == 0 
+    (φOnline', φOptim') <- if epoch `mod` d == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
@@ -260,8 +260,8 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     updateActor :: IO (ActorNet, T.Adam)
     updateActor = do
         when (verbose && epoch `mod` 10 == 0) do
-            putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
-        _ <- trackLoss tracker (iter' !! epoch') 
+            putStrLn $ "\t\tφ Loss:\t" ++ show jφ
+        _ <- trackLoss tracker ((iter' !! epoch') `div` d)
                        "Actor_Loss" (T.asValue jφ :: Float)
         T.runStep φ φOptim jφ ηφ
       where
@@ -279,7 +279,7 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
 updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
              -> IO Agent
 updatePolicy iteration agent tracker buffer epochs = do
-    memories <- RPB.sampleIO batchSize buffer
+    memories <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer
     updateStep iteration epochs agent tracker memories
 
 -- | Evaluate Policy for usually just one step and a pre-determined warmup Period
@@ -329,7 +329,8 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
 
     actions <- if iteration <= 0
                   then nanToNum' <$> randomActionPool envUrl
-                  else act agent (T.cat (T.Dim 1) [states, targets]) >>= T.detach
+                  else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
+                            >>= T.detach . toFloatCPU 
 
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
@@ -338,16 +339,14 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         keys    = head infos
         success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
-    -- preds  <- head . M.elems <$> acePoolPredicate envUrl
-    -- scaler <- scalerPool envUrl (M.keys preds) 
     scaler <- scalerPool' envUrl
 
     (states', targets', targets'') <- if T.any dones 
            then postProcess keys scaler <$> resetPool' envUrl dones
            else pure $ postProcess keys scaler states''
 
-    let buffer' = HER.push'' bufferSize buffer states actions rewards
-                             states' dones targets' targets'' 
+    let !buffer' = HER.push'' bufferSize buffer states actions rewards
+                              states' dones targets' targets'' 
 
     when (step < numSteps) do
         _ <- trackLoss tracker (iter' !! step) "Success" success
@@ -423,6 +422,9 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                                    <$> HER.sampleTargets strategy k predicate b') 
                              buffer episodes
 
+    when verbose do
+        putStrLn $ "\tReplay Buffer Size: " ++ show (HER.size buffer')
+
     let memory = HER.asRPB buffer'
 
     !agent' <- if RPB.size memory <= batchSize 
@@ -432,8 +434,6 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     saveAgent ptPath agent
 
     keys   <- infoPool envUrl
-    -- preds  <- head . M.elems <$> acePoolPredicate envUrl
-    -- scaler <- scalerPool envUrl (M.keys preds) 
     scaler <- scalerPool' envUrl
     (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
 
@@ -451,13 +451,11 @@ train' envUrl tracker RPB agent = do
     let !states = processGace states' keys
     runAlgorithmRPB 0 agent envUrl tracker False RPB.mkBuffer states 
 train' envUrl tracker HER agent = do
-    states' <- toFloatGPU <$> resetPool envUrl
+    states' <- toFloatCPU <$> resetPool envUrl
     keys    <- infoPool envUrl
-    -- preds   <- head . M.elems <$> acePoolPredicate envUrl
-    -- scaler  <- scalerPool envUrl (M.keys preds) 
     scaler  <- scalerPool' envUrl
     let (states, targets, _) = postProcess keys scaler states'
-    runAlgorithmHER 0 agent envUrl tracker False HER.mkBuffer targets states 
+    runAlgorithmHER 0 agent envUrl tracker False HER.empty targets states 
 train' _ _ _ _ = undefined
 
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on Environment
