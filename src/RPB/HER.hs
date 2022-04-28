@@ -10,6 +10,7 @@ module RPB.HER ( Strategy (..)
                , size
                , push
                , push'
+               , push''
                , drop'
                , drop
                , envSplit
@@ -135,6 +136,11 @@ push' cap Buffer{..} (Buffer s a r s' d t t') = drop cap buf
     t'' = T.cat dim [targets , t]
     g'' = T.cat dim [targets', t']
     buf = Buffer s'' a'' r'' n'' d'' t'' g''
+
+-- | Alternative Push if tensors are not in a buffer yet
+push'' :: Int -> Buffer T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor 
+       -> T.Tensor -> T.Tensor -> T.Tensor -> T.Tensor -> Buffer T.Tensor
+push'' cap b s a r s' d t t' = push' cap b (Buffer s a r s' d t t')
 
 -- | Get the given indices from Buffer
 sample :: T.Tensor -> Buffer T.Tensor -> Buffer T.Tensor

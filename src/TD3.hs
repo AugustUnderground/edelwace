@@ -59,36 +59,39 @@ data CriticNetSpec = CriticNetSpec { qObsDim :: Int, qActDim :: Int }
 data ActorNet = ActorNet { pLayer0 :: T.Linear
                          , pLayer1 :: T.Linear
                          , pLayer2 :: T.Linear 
-                         , pLayer3 :: T.Linear 
                          } deriving (Generic, Show, T.Parameterized)
 
 -- | Critic Network Architecture
-data CriticNet = CriticNet { qLayer0 :: T.Linear
-                           , qLayer1 :: T.Linear
-                           , qLayer2 :: T.Linear 
-                           , qLayer3 :: T.Linear 
+data CriticNet = CriticNet { q1Layer0 :: T.Linear
+                           , q1Layer1 :: T.Linear
+                           , q1Layer2 :: T.Linear 
+                           , q2Layer0 :: T.Linear
+                           , q2Layer1 :: T.Linear
+                           , q2Layer2 :: T.Linear 
                            } deriving (Generic, Show, T.Parameterized)
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 64) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 128) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 64      64)
+                                       <*> ( T.sample (T.LinearSpec 128     128)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 64      64)
-                                             >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 64  pActDim)
+                                       <*> ( T.sample (T.LinearSpec 128 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 64) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 64  64) 
+                                         <*> ( T.sample (T.LinearSpec 128 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 64  64) 
+                                         <*> ( T.sample (T.LinearSpec 128   1) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 64   1) 
+                                         <*> ( T.sample (T.LinearSpec dim 128) 
+                                               >>= weightInitUniform' )
+                                         <*> ( T.sample (T.LinearSpec 128 128) 
+                                               >>= weightInitUniform' )
+                                         <*> ( T.sample (T.LinearSpec 128   1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
@@ -96,82 +99,68 @@ instance T.Randomizable CriticNetSpec CriticNet where
 π :: ActorNet -> T.Tensor -> T.Tensor
 π ActorNet{..} o = a
   where
-    a = T.tanh . T.linear pLayer3
-      . T.relu . T.linear pLayer2
+    a = T.tanh . T.linear pLayer2
       . T.relu . T.linear pLayer1
       . T.relu . T.linear pLayer0
       $ o
 
 -- | Critic Network Forward Pass
-q :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q CriticNet{..} o a = v
+q :: CriticNet -> T.Tensor -> T.Tensor -> [T.Tensor]
+q CriticNet{..} o a = [v1,v2]
   where 
-    x = T.cat (T.Dim $ -1) [o,a]
-    v = T.linear qLayer3 . T.relu
-      . T.linear qLayer2 . T.relu
-      . T.linear qLayer1 . T.relu
-      . T.linear qLayer0 $ x
+    x  = T.cat (T.Dim $ -1) [o,a]
+    v1 = T.linear q1Layer2 . T.relu
+       . T.linear q1Layer1 . T.relu
+       . T.linear q1Layer0 $ x
+    v2 = T.linear q2Layer2 . T.relu
+       . T.linear q2Layer1 . T.relu
+       . T.linear q2Layer0 $ x
 
 -- | Convenience Function, takes the minimum of both online actors
-q' :: CriticNet -> CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
-q' c1 c2 o a = v
-  where
-    q1 = q c1 o a
-    q2 = q c2 o a
-    v  = fst . T.minDim (T.Dim 1) T.KeepDim $ T.cat (T.Dim 1) [q1, q2]
+q' :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
+q' cn o a = fst . T.minDim (T.Dim 1) T.KeepDim . T.cat (T.Dim 1) 
+          $ q cn o a
+-- q' = ((fst .) .) . ((T.minDim (T.Dim 1) T.KeepDim .) .) . ((T.cat (T.Dim 1) . ) .) . q
 
 ------------------------------------------------------------------------------
 -- TD3 Agent
 ------------------------------------------------------------------------------
 
 -- | TD3 Agent
-data Agent = Agent { φ       :: ActorNet    -- ^ Online Policy φ
-                   , φ'      :: ActorNet    -- ^ Target Policy φ'
-                   , θ1      :: CriticNet   -- ^ Online Critic θ1
-                   , θ2      :: CriticNet   -- ^ Online Critic θ2
-                   , θ1'     :: CriticNet   -- ^ Target Critic θ1
-                   , θ2'     :: CriticNet   -- ^ Target Critic θ2
-                   , φOptim  :: T.Adam      -- ^ Policy Optimizer
-                   , θ1Optim :: T.Adam      -- ^ Critic 1 Optimizer
-                   , θ2Optim :: T.Adam      -- ^ Critic 2 Optimizer
+data Agent = Agent { φ      :: ActorNet    -- ^ Online Policy φ
+                   , φ'     :: ActorNet    -- ^ Target Policy φ'
+                   , θ      :: CriticNet   -- ^ Online Critic θ
+                   , θ'     :: CriticNet   -- ^ Target Critic θ
+                   , φOptim :: T.Adam      -- ^ Policy Optimizer
+                   , θOptim :: T.Adam      -- ^ Critic Optimizer
                    } deriving (Generic, Show)
 
 -- | Agent constructor
 mkAgent :: Int -> Int -> IO Agent
 mkAgent obsDim actDim = do
-    φOnline   <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
-    φTarget'  <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
-    θ1Online  <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
-    θ2Online  <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
-    θ1Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
-    θ2Target' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
+    φOnline  <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
+    φTarget' <- toFloatGPU <$> T.sample (ActorNetSpec obsDim actDim)
+    θOnline  <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
+    θTarget' <- toFloatGPU <$> T.sample (CriticNetSpec obsDim actDim)
 
-    let φTarget  = copySync φTarget'  φOnline
-        θ1Target = copySync θ1Target' θ1Online
-        θ2Target = copySync θ2Target' θ2Online
-    
+    let φTarget = copySync φTarget' φOnline
+        θTarget = copySync θTarget' θOnline
+        φOpt    = T.mkAdam 0 β1 β2 (NN.flattenParameters φOnline)
+        θOpt    = T.mkAdam 0 β1 β2 (NN.flattenParameters θOnline)
 
-    let φOpt  = T.mkAdam 0 β1 β2 (NN.flattenParameters φOnline)
-        θ1Opt = T.mkAdam 0 β1 β2 (NN.flattenParameters θ1Online)
-        θ2Opt = T.mkAdam 0 β1 β2 (NN.flattenParameters θ2Online)
-
-    pure $ Agent φOnline φTarget θ1Online θ2Online θ1Target θ2Target
-                 φOpt            θ1Opt    θ2Opt                      
+    pure $ Agent φOnline φTarget θOnline θTarget φOpt θOpt
 
 -- | Save an Agent Checkpoint
 saveAgent :: String -> Agent -> IO ()
 saveAgent path Agent{..} = do
 
-        T.saveParams φ   (path ++ "/actorOnline.pt")
-        T.saveParams φ'  (path ++ "/actorTarget.pt")
-        T.saveParams θ1  (path ++ "/q1Online.pt")
-        T.saveParams θ2  (path ++ "/q2Online.pt")
-        T.saveParams θ1' (path ++ "/q1Target.pt")
-        T.saveParams θ2' (path ++ "/q2Target.pt")
+        T.saveParams φ  (path ++ "/actorOnline.pt")
+        T.saveParams φ' (path ++ "/actorTarget.pt")
+        T.saveParams θ  (path ++ "/q1Online.pt")
+        T.saveParams θ' (path ++ "/q1Target.pt")
 
-        saveOptim φOptim  (path ++ "/actorOptim")
-        saveOptim θ1Optim (path ++ "/q1Optim")
-        saveOptim θ2Optim (path ++ "/q2Optim")
+        saveOptim φOptim (path ++ "/actorOptim")
+        saveOptim θOptim (path ++ "/q1Optim")
 
         putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
 
@@ -184,18 +173,14 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 loadAgent path obsDim iter actDim = do
         Agent{..} <- mkAgent obsDim actDim
 
-        fφ    <- T.loadParams φ   (path ++ "/actor.pt")
-        fφ'   <- T.loadParams φ'  (path ++ "/actor.pt")
-        fθ1   <- T.loadParams θ1  (path ++ "/q1Online.pt")
-        fθ2   <- T.loadParams θ2  (path ++ "/q2Online.pt")
-        fθ1'  <- T.loadParams θ1' (path ++ "/q1Target.pt")
-        fθ2'  <- T.loadParams θ2' (path ++ "/q2Target.pt")
-
-        fφOpt  <- loadOptim iter β1 β2 (path ++ "/actorOptim")
-        fθ1Opt <- loadOptim iter β1 β2 (path ++ "/q1Optim")
-        fθ2Opt <- loadOptim iter β1 β2 (path ++ "/q2Optim")
+        fφ    <- T.loadParams φ  (path ++ "/actor.pt")
+        fφ'   <- T.loadParams φ' (path ++ "/actor.pt")
+        fθ    <- T.loadParams θ  (path ++ "/q1Online.pt")
+        fθ'   <- T.loadParams θ' (path ++ "/q1Target.pt")
+        fφOpt <- loadOptim iter β1 β2 (path ++ "/actorOptim")
+        fθOpt <- loadOptim iter β1 β2 (path ++ "/q1Optim")
        
-        pure $ Agent fφ fφ' fθ1 fθ2 fθ1' fθ2' fφOpt fθ1Opt fθ2Opt
+        pure $ Agent fφ fφ' fθ fθ' fφOpt fθOpt
 
 -- | Get action from online policy with naive / static Exploration Noise
 act :: Agent -> T.Tensor -> IO T.Tensor
@@ -204,7 +189,7 @@ act Agent{..} s = do
     pure $ T.clamp actionLow actionHigh (a + ε)
   where
     a = π φ s
-    μ = toFloatGPU $ T.zerosLike a
+    μ = T.zerosLike a
     σ = T.repeat (T.shape a) σAct
 
 -- | Get action from online policy with dynamic Exploration Noise
@@ -239,35 +224,29 @@ updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor
            -> IO Agent
 updateStep _ 0 agent _ _ = pure agent
 updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
-    a' <- evaluate agent s'
-    let v'  = q' θ1' θ2' s' a'
-        y   = r + ((1.0 - d') * γ * v')
-        v1  = q θ1 s a
-        v2  = q θ2 s a
+    a' <- evaluate agent s' >>= T.detach
+    v' <- T.detach $ q' θ' s' a'
+    y  <- T.detach $ r + ((1.0 - d') * γ * v')
 
-    jQ1 <- T.mseLoss v1 <$> T.detach y
-    jQ2 <- T.mseLoss v2 <$> T.detach y
+    let [v1,v2] = q  θ  s  a
+        jQ = T.mseLoss v1 y + T.mseLoss v2 y
 
-    (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηθ
-    (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηθ
+    (θOnline', θOptim') <- T.runStep θ θOptim jQ ηθ
 
     when (verbose && epoch `mod` 10 == 0) do
         putStrLn $ "\tEpoch " ++ show epoch
-        putStrLn $ "\t\tΘ1 Loss:\t" ++ show jQ1
-        putStrLn $ "\t\tΘ2 Loss:\t" ++ show jQ2
-    _ <- trackLoss tracker (iter' !! epoch') "Critic1_Loss" (T.asValue jQ1 :: Float)
-    _ <- trackLoss tracker (iter' !! epoch') "Critic2_Loss" (T.asValue jQ2 :: Float)
+        putStrLn $ "\t\tΘ Loss:\t" ++ show jQ
+    _ <- trackLoss tracker (iter' !! epoch') "Critic_Loss" (T.asValue jQ :: Float)
 
-    (φOnline', φOptim') <- if epoch `mod` d == 0 
+    (φOnline', φOptim') <- if iteration `mod` d == 0 
                               then updateActor
                               else pure (φ, φOptim)
 
-    (φTarget', θ1Target', θ2Target') <- if epoch' == 0
-                                           then syncTargets
-                                           else pure (φ', θ1', θ2')
+    (φTarget', θTarget') <- if epoch' == 0
+                               then syncTargets
+                               else pure (φ', θ')
 
-    let agent' = Agent φOnline' φTarget' θ1Online' θ2Online' θ1Target' θ2Target' 
-                       φOptim'           θ1Optim'  θ2Optim'
+    let agent' = Agent φOnline' φTarget' θOnline' θTarget' φOptim' θOptim'
 
     updateStep iteration epoch' agent' tracker buffer
   where
@@ -282,20 +261,19 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
     updateActor = do
         when (verbose && epoch `mod` 10 == 0) do
             putStrLn $ "\t\tφ  Loss:\t" ++ show jφ
-        _ <- trackLoss tracker ((iter' !! epoch') `div` d) 
+        _ <- trackLoss tracker (iter' !! epoch') 
                        "Actor_Loss" (T.asValue jφ :: Float)
         T.runStep φ φOptim jφ ηφ
       where
-        v   = q θ1 s $ π φ s
-        jφ  = T.negative . T.mean $ v
-    syncTargets :: IO (ActorNet, CriticNet, CriticNet)
+        [v,_] = q θ s $ π φ s
+        jφ    = T.negative . T.mean $ v
+    syncTargets :: IO (ActorNet, CriticNet)
     syncTargets = do
         when verbose do
             putStrLn "\t\tUpdating Targets."
-        φTarget'  <- softSync τ φ'  φ
-        θ1Target' <- softSync τ θ1' θ1 
-        θ2Target' <- softSync τ θ2' θ2 
-        pure (φTarget', θ1Target', θ2Target')
+        φTarget' <- softSync τ φ' φ
+        θTarget' <- softSync τ θ' θ
+        pure (φTarget', θTarget')
 
 -- | Perform Policy Update Steps
 updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
@@ -313,7 +291,7 @@ evaluatePolicyRPB iteration step agent envUrl tracker states buffer = do
     p       <- (iteration *) <$> numEnvsPool envUrl
     actions <- if p < warmupPeriode
                   then randomActionPool envUrl
-                  else act' iteration agent states >>= T.detach
+                  else act agent states >>= T.detach
     
     (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
@@ -349,12 +327,11 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   targets buffer | S.size done == numEnvs = pure buffer
                                  | otherwise              = do
 
-    explore <- T.all . T.ge (T.asTensor ([0.2] :: [Float])) <$> T.randIO' [1]
-    actions <- if iteration <= 0 || explore
+    actions <- if iteration <= 0
                   then nanToNum' <$> randomActionPool envUrl
-                  else act' iteration agent (T.cat (T.Dim 1) [states, targets]) 
+                  else act agent (T.cat (T.Dim 1) [states, targets]) >>= T.detach
 
-    (!states'', !rewards, !dones, !infos) <- T.detach actions >>= stepPool envUrl
+    (!states'', !rewards, !dones, !infos) <- stepPool envUrl actions
 
     let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
@@ -368,9 +345,8 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
            then postProcess keys scaler <$> resetPool' envUrl dones
            else pure $ postProcess keys scaler states''
 
-    let predicate = HER.targetCriterion preds
-        buffer'   = HER.push bufferSize predicate buffer states actions 
-                             states' targets' targets''
+    let buffer' = HER.push'' bufferSize buffer states actions rewards
+                             states' dones targets' targets'' 
 
     when (step < numSteps) do
         _ <- trackLoss tracker (iter' !! step) "Success" success
@@ -448,8 +424,11 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     let memory = HER.asRPB buffer'
 
-    !agent' <- updatePolicy iteration agent tracker memory numEpochs
-    saveAgent ptPath agent 
+    !agent' <- if RPB.size memory <= batchSize 
+                  then pure agent
+                  else updatePolicy iteration agent tracker memory numEpochs
+
+    saveAgent ptPath agent
 
     keys   <- infoPool envUrl
     preds  <- head . M.elems <$> acePoolPredicate envUrl
