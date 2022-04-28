@@ -68,6 +68,9 @@ splits :: [Int] -> [[Int]]
 -- | Helper function creating split indices as gpu int tensor
 splits' :: [Int] -> [Tensor]
 
+-- | Split Tensor into list of Tensors along dimension
+splitDim :: Int -> Tensor -> [Tensor]
+
 -- | Current Timestamp as formatted string
 currentTimeStamp :: String -> IO String
 
@@ -148,20 +151,35 @@ cpu :: Device
 -- | Default Tensor Data Type
 dataType :: DType
 
--- | Convert an Array to a Tensor
+-- | Convert an Array to a Tensor on GPU
 toTensor :: TensorLike a => a -> Tensor
 
--- | Convert an Array to a Tensor
+-- | Convert an Array to a Tensor on CPU
+toTensor' :: TensorLike a => a -> Tensor
+
+-- | Convert an Array to a Tensor on GPU
 toIntTensor :: TensorLike a => a -> Tensor
+
+-- | Convert an Array to a Tensor on CPU
+toIntTensor' :: TensorLike a => a -> Tensor
 
 -- | Create an empty Float Tensor on GPU
 emptyTensor :: Tensor
 
--- | Convert a Scalar to a Tensor
+-- | Create an empty Float Tensor on CPU
+emptyTensor' :: Tensor
+
+-- | Convert a Scalar to a Tensor on GPU
 toScalar :: Float -> Tensor
+
+-- | Convert a Scalar to a Tensor on CPU
+toScalar' :: Float -> Tensor
 
 -- | Convert model to Double on GPU
 toDoubleGPU :: forall a. HasTypes a Tensor => a -> a
+
+-- | Convert model to Double on CPU
+toDoubleGPU' :: forall a. HasTypes a Tensor => a -> a
 
 -- | Convert model to Float on CPU
 toFloatGPU :: forall a. HasTypes a Tensor => a -> a
@@ -169,8 +187,11 @@ toFloatGPU :: forall a. HasTypes a Tensor => a -> a
 -- | Convert model to Float on CPU
 toFloatCPU :: forall a. HasTypes a Tensor => a -> a
 
--- | Generate a Tensor of random Integers
+-- | Generate a Tensor of random Integers on GPU
 randomInts :: Int -> Int -> Int -> IO Tensor
+
+-- | Generate a Tensor of random Integers on CPU
+randomInts' :: Int -> Int -> Int -> IO Tensor
 
 -- | Generate Normally Distributed Random values given dimensions
 normal' :: [Int] -> IO Tensor
@@ -226,17 +247,23 @@ Continuous :: ActionSpace
 -- | Discrete Action Space
 Discrete :: ActionSpace
 
--- | Convert a Map to a Tensor where Pool index is a dimension
+-- | Convert a Map to a Tensor where Pool index is a dimension on GPU
 mapToTensor :: Map Int [Float] -> Tensor
 
--- | Convert Tensor to Map (Continuous action spaces)
+-- | Convert a Map to a Tensor where Pool index is a dimension on CPU
+mapToTensor' :: Map Int [Float] -> Tensor
+
+-- | Convert Tensor to Map (Continuous action spaces) on GPU
 tensorToMap :: Tensor -> Map Int [Float]
 
--- | Convert Tensor to Map (Discrete action spaces)
+-- | Convert Tensor to Map (Discrete action spaces) on CPU
 tensorToMap' :: Tensor -> Map Int Int
 
--- | Convert the Pooled Step Map to a Tuple
+-- | Convert the Pooled Step Map to a Tuple on GPU
 stepsToTuple :: Map Int Step -> (Tensor, Tensor, Tensor, [Info])
+
+-- | Convert the Pooled Step Map to a Tuple on CPU
+stepsToTuple' :: Map Int Step -> (Tensor, Tensor, Tensor, [Info])
 
 -- | Generic HTTP GET Request to Hym Server
 hymGet :: HymURL -> String -> IO ByteString
@@ -330,6 +357,10 @@ targetKeysPool :: HymURL -> IO [String]
 -- | Implying same target params for all envs in pool.
 scalerPool :: HymURL -> [String] -> IO Tensor
 
+-- | Implying same target params for all envs in pool and we want all of
+--   them.
+scalerPool' :: HymURL -> IO Tensor
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> Tensor -> IO (Tensor, Tensor, Tensor, [Info])
 
@@ -344,6 +375,9 @@ randomActionPool :: HymURL -> IO Tensor
 
 -- | Create Boolean Mask Tensor from list of indices.
 boolMask :: Int -> [Int] -> Tensor
+
+-- | Create Boolean Mask Tensor from list of indices on CPU.
+boolMask'' :: Int -> [Int] -> Tensor
 
 -- | Create a Boolean Mask Tensor from index Tensor
 boolMask' :: Int -> Tensor -> Tensor
@@ -762,7 +796,7 @@ Buffer :: !a -> !a -> !a -> !a -> !a -> Buffer a
 -- | Terminal Mask
 [dones] :: Buffer a -> !a
 
--- | Create a new, empty Buffer on the GPU
+-- | Create a new, empty Buffer on the CPU
 mkBuffer :: Buffer Tensor
 
 -- | Create Empty Buffer
