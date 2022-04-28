@@ -284,7 +284,7 @@ updatePolicy iteration agent tracker buffer epochs = do
 
 -- | Evaluate Policy for usually just one step and a pre-determined warmup Period
 evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
-               -> RPB.Buffer T.Tensor -> IO (RPB.Buffer T.Tensor, T.Tensor)
+                  -> RPB.Buffer T.Tensor -> IO (RPB.Buffer T.Tensor, T.Tensor)
 evaluatePolicyRPB _ 0 _ _ _ states buffer = pure (buffer, states)
 evaluatePolicyRPB iteration step agent envUrl tracker states buffer = do
 
@@ -338,8 +338,9 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         keys    = head infos
         success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
-    preds  <- head . M.elems <$> acePoolPredicate envUrl
-    scaler <- scalerPool envUrl (M.keys preds) 
+    -- preds  <- head . M.elems <$> acePoolPredicate envUrl
+    -- scaler <- scalerPool envUrl (M.keys preds) 
+    scaler <- scalerPool' envUrl
 
     (states', targets', targets'') <- if T.any dones 
            then postProcess keys scaler <$> resetPool' envUrl dones
@@ -431,8 +432,9 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
     saveAgent ptPath agent
 
     keys   <- infoPool envUrl
-    preds  <- head . M.elems <$> acePoolPredicate envUrl
-    scaler <- scalerPool envUrl (M.keys preds) 
+    -- preds  <- head . M.elems <$> acePoolPredicate envUrl
+    -- scaler <- scalerPool envUrl (M.keys preds) 
+    scaler <- scalerPool' envUrl
     (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
 
     runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
@@ -451,8 +453,9 @@ train' envUrl tracker RPB agent = do
 train' envUrl tracker HER agent = do
     states' <- toFloatGPU <$> resetPool envUrl
     keys    <- infoPool envUrl
-    preds   <- head . M.elems <$> acePoolPredicate envUrl
-    scaler  <- scalerPool envUrl (M.keys preds) 
+    -- preds   <- head . M.elems <$> acePoolPredicate envUrl
+    -- scaler  <- scalerPool envUrl (M.keys preds) 
+    scaler  <- scalerPool' envUrl
     let (states, targets, _) = postProcess keys scaler states'
     runAlgorithmHER 0 agent envUrl tracker False HER.mkBuffer targets states 
 train' _ _ _ _ = undefined

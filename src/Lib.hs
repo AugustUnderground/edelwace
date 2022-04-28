@@ -558,6 +558,11 @@ scalerPool url keys = T.transpose2D . T.stack (T.Dim 0) . M.elems
                     . M.filterWithKey (\k _ -> k `elem` keys) 
                     . M.map toTensor . head . M.elems <$> acePoolScaler url
 
+-- | Implying same target params for all envs in pool and we want all of them.
+scalerPool' :: HymURL -> IO T.Tensor
+scalerPool' url = T.transpose2D . T.stack (T.Dim 0) . M.elems 
+                . M.map toTensor . head . M.elems <$> acePoolScaler url
+
 -- | Step in a Control Environment
 stepPool :: HymURL -> T.Tensor -> IO (T.Tensor, T.Tensor, T.Tensor, [Info])
 stepPool url action = stepsToTuple <$> hymPoolStep url (tensorToMap action)
@@ -622,23 +627,29 @@ postProcess Info{..} scaler obs = (states, target, target')
   where
     sMax    = indexSelect'' 0 [1] scaler
     sMin    = indexSelect'' 0 [0] scaler
-    k2i kl  = T.toDType T.Int32 . toTensor 
-            . map (fromJust . flip elemIndex kl)
+    k2i kl  = T.toDType T.Int32 . toTensor . map (fromJust . flip elemIndex kl)
     tk      = filter (isPrefixOf "target_") observations
-    ok      = map (fromJust . stripPrefix "target_") tk
+    tk'     = map (fromJust . stripPrefix "target_") tk
+    ok      = filter (\k -> ((isLower . head $ k) || (k == "A"))
+                         && not ("target_" `isPrefixOf` k) 
+                         && not ("delta_"  `isPrefixOf` k) 
+                         && not ("steps"   `isInfixOf`  k) 
+                         &&     ("iss"         /=       k) 
+                         &&     ("idd"         /=       k)
+                    ) observations
     keys    = ok ++ tk
     idx     = k2i observations keys
     idxObs  = k2i keys ok
     idxTgt  = k2i keys tk
-    idxTgt' = k2i keys ok
+    idxTgt' = k2i keys tk'
     keyAbs  = [ "A", "gm", "i_out_max", "i_out_max", "pm", "sr_f", "sr_r"
-              , "ugbw" , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz",
-              "vn_100Hz", "vn_1kHz", "vn_10kHz", "vn_100kHz"] :: [String]
+              , "ugbw" , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz"
+              , "vn_100Hz", "vn_1kHz", "vn_10kHz", "vn_100kHz"]
     mskAbs  = boolMask (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` ok]
     keyLog  = [ "A", "i_out_max", "i_out_max", "sr_f", "sr_r", "ugbw"
               , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz", "vn_100Hz"
-              , "vn_1kHz", "vn_10kHz", "vn_100kHz"] :: [String]
+              , "vn_1kHz", "vn_10kHz", "vn_100kHz"]
     mskLog  = boolMask (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` ok]
     obs'    = nanToNum'' $ T.indexSelect 1 idx obs
