@@ -385,9 +385,12 @@ boolMask' :: Int -> Tensor -> Tensor
 -- | Process Targets for HER
 processTarget :: Map Int (Map String Float) -> Tensor
 
+-- | Convenience, takes output straight from <a>stepPool</a>.
+postProcess' :: Map String [Float] -> (Tensor, Tensor, Tensor, [Info]) -> (Tensor, Tensor, Tensor, Tensor, Tensor)
+
 -- | Process for HER returns processed observations, the target and the
 --   augmented target
-postProcess :: Info -> Tensor -> Tensor -> (Tensor, Tensor, Tensor)
+postProcess :: Info -> Map String [Float] -> Tensor -> (Tensor, Tensor, Tensor)
 
 -- | Process for HER returns processed observations, the target and the
 --   augmented target
@@ -1309,6 +1312,9 @@ wInit :: Float
 -- | Betas
 β2 :: Float
 
+-- | Leaky ReLU Slope
+negativeSlope :: Float
+
 -- | Replay Buffer Type
 bufferType :: BufferType
 
@@ -1404,7 +1410,7 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 π :: ActorNet -> Tensor -> Tensor
 
 -- | Critic Network Forward Pass
-q :: CriticNet -> Tensor -> Tensor -> [Tensor]
+q :: CriticNet -> Tensor -> Tensor -> (Tensor, Tensor)
 
 -- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> Tensor -> Tensor -> Tensor
