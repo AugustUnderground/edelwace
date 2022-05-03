@@ -28,6 +28,7 @@ import System.Directory
 import Network.Wreq                        as Wreq
 import Network.HTTP.Client                 as HTTP
 import qualified Data.Map                  as M
+import qualified Data.Set                  as S
 import qualified Data.ByteString.Lazy      as BL
 import qualified Data.ByteString           as BS hiding (pack)
 import qualified Torch                     as T
@@ -682,56 +683,60 @@ processTarget targetMap = tgt4
     tgt3 = T.where' mskA (tgt2 * 1.0e10) tgt2
     tgt4   = nanToNum'' tgt3
 
+-- | Convenience, takes output straight from `stepPool`.
+postProcess' :: M.Map String [Float] -> (T.Tensor, T.Tensor, T.Tensor, [Info])
+             -> (T.Tensor, T.Tensor, T.Tensor, T.Tensor, T.Tensor)
+postProcess' scaler (states', rewards, dones, infos) = ret
+  where
+    info'                     = head infos
+    (states, target, target') = postProcess info' scaler states'
+    ret                       = (states, target, target', rewards, dones)
+
 -- | Process for HER returns processed observations, the target and the
 -- augmented target
-postProcess :: Info -> T.Tensor -> T.Tensor -> (T.Tensor, T.Tensor, T.Tensor)
-postProcess Info{..} scaler obs = (states, target, target')
+postProcess :: Info -> M.Map String [Float] -> T.Tensor 
+            -> (T.Tensor, T.Tensor, T.Tensor)
+postProcess Info{..} sclMap obs = (states, target, target')
   where
     k2i kl  = T.toDType T.Int32 . T.asTensor . map (fromJust . flip elemIndex kl)
     tk      = filter (isPrefixOf "target_") observations
     tk'     = map (fromJust . stripPrefix "target_") tk
-    ok      = filter (\k -> ((isLower . head $ k) || (k == "A"))
-                         && not ("target_" `isPrefixOf` k) 
-                         && not ("delta_"  `isPrefixOf` k) 
-                         && not ("steps"   `isInfixOf`  k) 
-                         &&     ("iss"         /=       k) 
-                         &&     ("idd"         /=       k)
-                    ) observations
+    ok      = M.keys sclMap
     keys    = ok ++ tk
     idx     = k2i observations keys
     idxObs  = k2i keys ok
     idxTgt  = k2i keys tk
     idxTgt' = k2i keys tk'
-    idxSt   = k2i ok tk'
-    sMin    = indexSelect'' 0 [0] scaler
-    sMax    = indexSelect'' 0 [1] scaler
-    sMin'   = T.indexSelect 1 idxSt sMin
-    sMax'   = T.indexSelect 1 idxSt sMax
-    keyAbs  = [ "A", "gm", "i_out_max", "i_out_max", "pm", "sr_f", "sr_r"
+    scaler' = T.transpose2D .  T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
+            . M.restrictKeys sclMap $ S.fromList tk'
+    scaler  = T.transpose2D .  T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
+            $ sclMap
+    sMin    = T.indexSelect' 0 [0] scaler
+    sMax    = T.indexSelect' 0 [1] scaler
+    tMin    = T.indexSelect' 0 [0] scaler'
+    tMax    = T.indexSelect' 0 [1] scaler'
+    keyAbs  = [ "A", "cof", "gm", "i_out_max", "i_out_min", "pm", "sr_f", "sr_r"
               , "ugbw" , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz"
               , "vn_100Hz", "vn_1kHz", "vn_10kHz", "vn_100kHz"]
     mskAbs  = boolMask'' (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` ok]
     mskAbs' = boolMask'' (length tk') 
-            $ [fromJust $ elemIndex k ok | k <- keyAbs, k `elem` tk']
-    keyLog  = [ "A", "i_out_max", "i_out_max", "sr_f", "sr_r", "ugbw"
+            $ [fromJust $ elemIndex k tk' | k <- keyAbs, k `elem` tk']
+    keyLog  = [ "A", "cof", "i_out_max", "i_out_min", "sr_f", "sr_r", "ugbw"
               , "voff_stat", "voff_sys", "vn_1Hz", "vn_10Hz", "vn_100Hz"
               , "vn_1kHz", "vn_10kHz", "vn_100kHz"]
     mskLog  = boolMask'' (length ok) 
             $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` ok]
     mskLog' = boolMask'' (length tk') 
-            $ [fromJust $ elemIndex k ok | k <- keyLog, k `elem` tk']
+            $ [fromJust $ elemIndex k tk' | k <- keyLog, k `elem` tk']
     obs'    = nanToNum'' $ T.indexSelect 1 idx obs
-    states  = T.clamp (-2.0) 2.0 . nanToNum'' 
-            . normalize'' (-1.0) 1.0 sMin sMax
-            . where'' mskLog T.log10 . where'' mskAbs T.abs 
+    states  = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 sMin sMax 
+            .  where'' mskLog T.log10 . where'' mskAbs T.abs 
             $ T.indexSelect 1 idxObs  obs'
-    target  = T.clamp (-2.0) 2.0 . nanToNum'' 
-            . normalize'' (-1.0) 1.0 sMin' sMax'
-            . where'' mskLog' T.log10 . where'' mskAbs' T.abs 
+    target  = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 tMin tMax 
+            .  where'' mskLog' T.log10 . where'' mskAbs' T.abs 
             $ T.indexSelect 1 idxTgt  obs'
-    target' = T.clamp (-2.0) 2.0 . nanToNum'' 
-            . normalize'' (-1.0) 1.0 sMin' sMax'
+    target' = T.clamp (-2.0) 2.0 . nanToNum'' . normalize'' (-1.0) 1.0 tMin tMax
             . where'' mskLog' T.log10 . where'' mskAbs' T.abs 
             $ T.indexSelect 1 idxTgt' obs'
 

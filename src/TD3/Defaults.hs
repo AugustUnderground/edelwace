@@ -24,7 +24,7 @@ numEpisodes :: Int
 numEpisodes   = 666
 -- | Horizon T
 numIterations :: Int
-numIterations = 500 -- 10 ^ (8 :: Int)
+numIterations = 1000 -- 10 ^ (8 :: Int)
 -- | Number of Steps to take with policy
 numSteps :: Int
 numSteps      = 50
@@ -33,7 +33,7 @@ numEpochs :: Int
 numEpochs     = 40
 -- | Early stop criterion
 earlyStop :: T.Tensor
-earlyStop     = toTensor (11.0 :: Float)
+earlyStop     = T.asTensor (11.0 :: Float)
 -- | Mini batch of N transistions
 batchSize :: Int
 batchSize     = 128
@@ -73,8 +73,9 @@ c :: Float
 c           = 0.5
 -- | Discount Factor
 γ :: T.Tensor
-γ           = toTensor (0.98 :: Float)
--- | Soft Update coefficient (sometimes "polyak") of the target networks τ ∈ [0,1]
+γ           = toTensor (0.99 :: Float)
+-- | Soft Update coefficient (sometimes "polyak") of the target 
+-- networks τ ∈ [0,1]
 τ :: T.Tensor
 τ           = toTensor (0.005 :: Float)
 -- | Decay Period
@@ -99,19 +100,22 @@ decayPeriod = 10 ^ (5 :: Int)
 
 -- | Initial weights
 wInit :: Float
-wInit = 3.0e-3
+wInit         = 3.0e-3
 -- | Learning Rate
 ηθ :: T.Tensor
-ηθ    = toTensor (1.0e-3 :: Float)
+ηθ            = toTensor (1.0e-3 :: Float)
 -- | Learning Rate
 ηφ :: T.Tensor
-ηφ    = toTensor (1.0e-3 :: Float)
+ηφ            = toTensor (1.0e-3 :: Float)
 -- | Betas
 β1   :: Float
-β1    = 0.9
+β1            = 0.9
 -- | Betas
 β2   :: Float
-β2    = 0.99
+β2            = 0.99
+-- | Leaky ReLU Slope
+negativeSlope :: Float
+negativeSlope = 0.01
 
 ------------------------------------------------------------------------------
 --  Memory / Replay Buffer Settings
