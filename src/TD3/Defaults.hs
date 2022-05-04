@@ -28,6 +28,9 @@ numIterations = 1000 -- 10 ^ (8 :: Int)
 -- | Number of Steps to take with policy
 numSteps :: Int
 numSteps      = 50
+-- | Random Exploration every n Episodes
+randomEpisode :: Int
+randomEpisode = 10
 -- | Number of epochs to train
 numEpochs :: Int
 numEpochs     = 40

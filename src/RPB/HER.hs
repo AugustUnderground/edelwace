@@ -157,19 +157,12 @@ envSplit ne buf = map (`sample` buf) idx
 
 -- | Split a buffer into episodes, dropping the last unfinished
 epsSplit :: Buffer T.Tensor -> [Buffer T.Tensor]
-epsSplit buf@(Buffer s a r s' d t t') = 
-    if T.any d 
-       then map (\i -> fmap (T.indexSelect 0 i) buf) dix
-       else [Buffer s a r s' d' t t']
+epsSplit buf@Buffer{..} | T.any dones = map split' dix
+                        | otherwise   = []
   where
-    opts   = T.withDType T.Int64 . T.withDevice cpu $ T.defaultOpts
-    finIdx = T.asTensor' ([[pred . head $ T.shape d]] :: [[Int]]) opts
-    finVal = T.asTensor ([1.0] :: [Float])
-    d'     = if T.any d
-                then d
-                else T.indexPut False [finIdx] finVal d
-    d''    = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ d'
-    dix    = splits' (0:(T.asValue d'' :: [Int]))
+    split' i = fmap (T.indexSelect 0 i) buf
+    dones'   = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+    dix      = splits' (0 : (T.asValue dones' :: [Int]))
 
 -- | Sample Additional Goals according to Strategy (drop first). `Random` is
 -- basically the same as `Episode` you just have to give it the entire buffer,

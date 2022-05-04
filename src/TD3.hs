@@ -72,42 +72,43 @@ data CriticNet = CriticNet { q1Layer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 400) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256     128)
+                                       <*> ( T.sample (T.LinearSpec 400     300)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 128 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 300 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 256) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 400) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec dim     128) 
+                                         <*> ( T.sample (T.LinearSpec 400 300) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 128     1) 
+                                         <*> ( T.sample (T.LinearSpec 300 1) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec qObsDim 256) 
+                                         <*> ( T.sample (T.LinearSpec dim 400) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec dim     128) 
+                                         <*> ( T.sample (T.LinearSpec 400 300) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 128     1) 
+                                         <*> ( T.sample (T.LinearSpec 300 1) 
                                                >>= weightInitUniform' )
-        where dim = 256 + qActDim
+        where dim = qObsDim + qActDim
+
 -- instance T.Randomizable CriticNetSpec CriticNet where
---     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 128) 
+--     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 256) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128 128) 
+--                                          <*> ( T.sample (T.LinearSpec dim     128) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128   1) 
+--                                          <*> ( T.sample (T.LinearSpec 128     1) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec dim 128) 
+--                                          <*> ( T.sample (T.LinearSpec qObsDim 256) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128 128) 
+--                                          <*> ( T.sample (T.LinearSpec dim     128) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128   1) 
+--                                          <*> ( T.sample (T.LinearSpec 128     1) 
 --                                                >>= weightInitUniform' )
---         where dim = qObsDim + qActDim
+--         where dim = 256 + qActDim
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
@@ -122,22 +123,22 @@ instance T.Randomizable CriticNetSpec CriticNet where
 q :: CriticNet -> T.Tensor -> T.Tensor -> (T.Tensor, T.Tensor)
 q CriticNet{..} o a = (v1,v2)
   where 
-    o1 = T.leakyRelu negativeSlope $ T.linear q1Layer0 o
-    o2 = T.leakyRelu negativeSlope $ T.linear q2Layer0 o
-    x1 = T.cat (T.Dim $ -1) [o1, a]
-    x2 = T.cat (T.Dim $ -1) [o2, a]
-    v1 = T.linear q1Layer2 . T.leakyRelu negativeSlope . T.linear q1Layer1 $ x1
-    v2 = T.linear q2Layer2 . T.leakyRelu negativeSlope . T.linear q2Layer1 $ x2
+    x  = T.cat (T.Dim $ -1) [o,a]
+    v1 = T.linear q1Layer2 . T.relu
+       . T.linear q1Layer1 . T.relu
+       . T.linear q1Layer0 $ x
+    v2 = T.linear q2Layer2 . T.relu
+       . T.linear q2Layer1 . T.relu
+       . T.linear q2Layer0 $ x
 
--- q CriticNet{..} o a = [v1,v2]
+-- q CriticNet{..} o a = (v1,v2)
 --   where 
---     x  = T.cat (T.Dim $ -1) [o,a]
---     v1 = T.linear q1Layer2 . T.relu
---        . T.linear q1Layer1 . T.relu
---        . T.linear q1Layer0 $ x
---     v2 = T.linear q2Layer2 . T.relu
---        . T.linear q2Layer1 . T.relu
---        . T.linear q2Layer0 $ x
+--     o1 = T.leakyRelu negativeSlope $ T.linear q1Layer0 o
+--     o2 = T.leakyRelu negativeSlope $ T.linear q2Layer0 o
+--     x1 = T.cat (T.Dim $ -1) [o1, a]
+--     x2 = T.cat (T.Dim $ -1) [o2, a]
+--     v1 = T.linear q1Layer2 . T.leakyRelu negativeSlope . T.linear q1Layer1 $ x1
+--     v2 = T.linear q2Layer2 . T.leakyRelu negativeSlope . T.linear q2Layer1 $ x2
 
 -- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
@@ -354,7 +355,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
 
-    actions <- if iteration <= 0
+    actions <- if iteration `mod` randomEpisode == 0 -- iteration <= 0
                   then nanToNum' <$> randomActionPool envUrl
                   else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
                             >>= T.detach . toFloatCPU 
@@ -430,7 +431,11 @@ runAlgorithmHER _ agent _ _ True _ _ _ = pure agent
 runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     when verbose do
-        putStrLn $ "Iteration " ++ show iteration ++ " / " ++ show numIterations
+        let eve = if iteration `mod` randomEpisode == 0
+                    then "Random Exploration"
+                    else "Policy Exploitation"
+        putStrLn $ "Episode " ++ show iteration ++ " / " ++ show numIterations
+                ++ ": " ++ eve
 
     numEnvs       <- numEnvsPool envUrl
     trajectories  <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
@@ -448,7 +453,9 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                              buffer episodes
 
     when verbose do
-        putStrLn $ "\tReplay Buffer Size: " ++ show (HER.size buffer')
+        putStrLn $ "\tReplay Buffer Size:\t\t" ++ show (HER.size buffer')
+        putStrLn $ "\tDones after augmentation:\t" 
+                 ++ show (head . T.shape . T.nonzero $ HER.dones buffer')
 
     let memory = HER.asRPB buffer'
 

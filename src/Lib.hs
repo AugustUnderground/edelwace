@@ -707,9 +707,9 @@ postProcess Info{..} sclMap obs = (states, target, target')
     idxObs  = k2i keys ok
     idxTgt  = k2i keys tk
     idxTgt' = k2i keys tk'
-    scaler' = T.transpose2D .  T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
+    scaler' = T.transpose2D . T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
             . M.restrictKeys sclMap $ S.fromList tk'
-    scaler  = T.transpose2D .  T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
+    scaler  = T.transpose2D . T.stack (T.Dim 0) .  M.elems . M.map T.asTensor 
             $ sclMap
     sMin    = T.indexSelect' 0 [0] scaler
     sMax    = T.indexSelect' 0 [1] scaler
