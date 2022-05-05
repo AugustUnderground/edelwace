@@ -72,43 +72,43 @@ data CriticNet = CriticNet { q1Layer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 400) 
+    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 400     300)
+                                       <*> ( T.sample (T.LinearSpec 256     256)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 300 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 400) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 400 300) 
+                                         <*> ( T.sample (T.LinearSpec 256 256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 300 1) 
+                                         <*> ( T.sample (T.LinearSpec 256 1) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec dim 400) 
+                                         <*> ( T.sample (T.LinearSpec dim 256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 400 300) 
+                                         <*> ( T.sample (T.LinearSpec 256 256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 300 1) 
+                                         <*> ( T.sample (T.LinearSpec 256 1) 
                                                >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
 -- instance T.Randomizable CriticNetSpec CriticNet where
---     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 256) 
+--     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 400) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec dim     128) 
+--                                          <*> ( T.sample (T.LinearSpec dim     300) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128     1) 
+--                                          <*> ( T.sample (T.LinearSpec 300     1) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec qObsDim 256) 
+--                                          <*> ( T.sample (T.LinearSpec qObsDim 400) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec dim     128) 
+--                                          <*> ( T.sample (T.LinearSpec dim     300) 
 --                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 128     1) 
+--                                          <*> ( T.sample (T.LinearSpec 300     1) 
 --                                                >>= weightInitUniform' )
---         where dim = 256 + qActDim
+--         where dim = 400 + qActDim
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
