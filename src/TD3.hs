@@ -74,41 +74,40 @@ data CriticNet = CriticNet { q1Layer0 :: T.Linear
 instance T.Randomizable ActorNetSpec ActorNet where
     sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256     256)
+                                       <*> ( T.sample (T.LinearSpec 256     128)
                                              >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                       <*> ( T.sample (T.LinearSpec 128 pActDim)
                                              >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
+    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 256) 
+                                         <*> ( T.sample (T.LinearSpec dim     256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 1) 
+                                         <*> ( T.sample (T.LinearSpec 256     1) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec dim 256) 
+                                         <*> ( T.sample (T.LinearSpec qObsDim 128) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 256) 
+                                         <*> ( T.sample (T.LinearSpec dim     256) 
                                                >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 1) 
+                                         <*> ( T.sample (T.LinearSpec 256     1)
                                                >>= weightInitUniform' )
-        where dim = qObsDim + qActDim
-
--- instance T.Randomizable CriticNetSpec CriticNet where
---     sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 400) 
---                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec dim     300) 
---                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 300     1) 
---                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec qObsDim 400) 
---                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec dim     300) 
---                                                >>= weightInitUniform' )
---                                          <*> ( T.sample (T.LinearSpec 300     1) 
---                                                >>= weightInitUniform' )
---         where dim = 400 + qActDim
+        where dim = 128 + qActDim
+--instance T.Randomizable CriticNetSpec CriticNet where
+--    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
+--                                               >>= weightInitUniform' )
+--                                         <*> ( T.sample (T.LinearSpec 256 256) 
+--                                               >>= weightInitUniform' )
+--                                         <*> ( T.sample (T.LinearSpec 256 1) 
+--                                               >>= weightInitUniform' )
+--                                         <*> ( T.sample (T.LinearSpec dim 256) 
+--                                               >>= weightInitUniform' )
+--                                         <*> ( T.sample (T.LinearSpec 256 256) 
+--                                               >>= weightInitUniform' )
+--                                         <*> ( T.sample (T.LinearSpec 256 1) 
+--                                               >>= weightInitUniform' )
+--        where dim = qObsDim + qActDim
 
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
@@ -123,22 +122,22 @@ instance T.Randomizable CriticNetSpec CriticNet where
 q :: CriticNet -> T.Tensor -> T.Tensor -> (T.Tensor, T.Tensor)
 q CriticNet{..} o a = (v1,v2)
   where 
-    x  = T.cat (T.Dim $ -1) [o,a]
-    v1 = T.linear q1Layer2 . T.relu
-       . T.linear q1Layer1 . T.relu
-       . T.linear q1Layer0 $ x
-    v2 = T.linear q2Layer2 . T.relu
-       . T.linear q2Layer1 . T.relu
-       . T.linear q2Layer0 $ x
+    o1 = T.leakyRelu negativeSlope $ T.linear q1Layer0 o
+    o2 = T.leakyRelu negativeSlope $ T.linear q2Layer0 o
+    x1 = T.cat (T.Dim $ -1) [o1, a]
+    x2 = T.cat (T.Dim $ -1) [o2, a]
+    v1 = T.linear q1Layer2 . T.leakyRelu negativeSlope . T.linear q1Layer1 $ x1
+    v2 = T.linear q2Layer2 . T.leakyRelu negativeSlope . T.linear q2Layer1 $ x2
 
 -- q CriticNet{..} o a = (v1,v2)
 --   where 
---     o1 = T.leakyRelu negativeSlope $ T.linear q1Layer0 o
---     o2 = T.leakyRelu negativeSlope $ T.linear q2Layer0 o
---     x1 = T.cat (T.Dim $ -1) [o1, a]
---     x2 = T.cat (T.Dim $ -1) [o2, a]
---     v1 = T.linear q1Layer2 . T.leakyRelu negativeSlope . T.linear q1Layer1 $ x1
---     v2 = T.linear q2Layer2 . T.leakyRelu negativeSlope . T.linear q2Layer1 $ x2
+--     x  = T.cat (T.Dim $ -1) [o,a]
+--     v1 = T.linear q1Layer2 . T.relu
+--        . T.linear q1Layer1 . T.relu
+--        . T.linear q1Layer0 $ x
+--     v2 = T.linear q2Layer2 . T.relu
+--        . T.linear q2Layer1 . T.relu
+--        . T.linear q2Layer0 $ x
 
 -- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor

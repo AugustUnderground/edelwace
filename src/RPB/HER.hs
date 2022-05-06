@@ -191,17 +191,19 @@ sampleTargets Random k prd buf = sampleTargets Episode k prd buf
 sampleTargets Future k prd buf | k >= size buf = pure buf
                                | otherwise     = do 
     buf''    <- sampleTargets Final k prd $ fmap (T.indexSelect 0 idx'') buf
-    idx      <- forM [0 .. (bs - k - 1)] (\k' -> T.randintIO k' bs [k] opts)
+    idx      <- sequence [  (T.asTensor (bs' :: Int) +) 
+                        <$> T.multinomialIO (T.ones' [bs - bs']) k False 
+                         |  bs' <- [ 0 .. bs ], bs' < (bs - k) ]
     let tgt' = T.cat (T.Dim 0) $ map (\i -> T.indexSelect 0 i $ targets' buf) idx
         rep  = T.full [bs - k] k opts
         rbuf = fmap (repeatInterleave' 0 rep . T.indexSelect 0 idx') buf
-        buf' = push cap prd buf (states rbuf) (actions rbuf) (states' rbuf) 
-               tgt' (targets' rbuf)
+        buf' = push cap prd empty (states rbuf) (actions rbuf) (states' rbuf) 
+                                  tgt' (targets' rbuf)
         cap' = size buf + size buf' + size buf''
     pure     $ foldl (push' cap') buf [buf', buf'']
   where
     bs       = size buf
-    cap      = bs + (k * bs)
+    cap      = (k + 1) * bs
     idx''    = T.arange (bs - k)    bs   1 opts
     idx'     = T.arange     0   (bs - k) 1 opts
     opts     = T.withDType T.Int32 . T.withDevice cpu $ T.defaultOpts

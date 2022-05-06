@@ -104,12 +104,12 @@ decayPeriod = 10 ^ (5 :: Int)
 -- | Initial weights
 wInit :: Float
 wInit         = 3.0e-3
--- | Learning Rate
-ηθ :: T.Tensor
-ηθ            = toTensor (1.0e-3 :: Float)
--- | Learning Rate
+-- | Actor Learning Rate
 ηφ :: T.Tensor
-ηφ            = toTensor (1.0e-3 :: Float)
+ηφ            = toTensor (5.0e-3 :: Float)
+-- | Critic Learning Rate
+ηθ :: T.Tensor
+ηθ            = toTensor (5.0e-3 :: Float)
 -- | Betas
 β1   :: Float
 β1            = 0.9
