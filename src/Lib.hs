@@ -210,10 +210,14 @@ initWeights Normal  mean std dims = normal        m' s' >>= T.makeIndependent
   where
     m' = toFloatGPU $ T.full' dims mean
     s' = toFloatGPU $ T.full' dims std
-initWeights XavierNormal   gain _ dims = T.xavierNormal  gain dims >>= T.makeIndependent
-initWeights XavierUniform  gain _ dims = T.xavierUniform gain dims >>= T.makeIndependent
-initWeights KaimingNormal  _    _ dims = T.kaimingNormal T.FanIn T.Relu dims >>= T.makeIndependent
-initWeights KaimingUniform _    _ dims = T.kaimingUniform T.FanIn T.Relu dims >>= T.makeIndependent
+initWeights XavierNormal   gain _ dims = T.xavierNormal  gain dims 
+                                            >>= T.makeIndependent
+initWeights XavierUniform  gain _ dims = T.xavierUniform gain dims 
+                                            >>= T.makeIndependent
+initWeights KaimingNormal  _    _ dims = T.kaimingNormal T.FanIn T.Relu dims 
+                                            >>= T.makeIndependent
+initWeights KaimingUniform _    _ dims = T.kaimingUniform T.FanIn T.Relu dims 
+                                            >>= T.makeIndependent
 initWeights _ _ _ _                    = error "Not Implemented"
 
 -- | Initialize Weights of Linear Layer
@@ -225,9 +229,19 @@ weightInit initType p1 p2 layer = do
     dims  = T.shape . T.toDependent . NN.weight $ layer
     bias' = NN.bias layer
 
+-- | Initialize Weights and Bias of Linear Layer
+weightInit' :: Initializer -> Float -> Float -> T.Linear -> IO T.Linear
+weightInit' initType p1 p2 layer = do
+    weight' <- initWeights initType p1 p2 dimsWeights
+    bias'   <- initWeights initType p1 p2 dimsBias
+    pure T.Linear { NN.weight = weight', NN.bias = bias' }
+  where
+    dimsWeights = T.shape . T.toDependent . NN.weight $ layer
+    dimsBias    = T.shape . T.toDependent . NN.bias   $ layer
+
 -- | Initialize weights uniformally given upper and lower bounds
 weightInitUniform :: Float -> Float -> T.Linear -> IO T.Linear
-weightInitUniform = weightInit Uniform
+weightInitUniform = weightInit' Uniform
 
 -- | Initialize weights uniformally based on Fan In
 weightInitUniform' :: T.Linear -> IO T.Linear
@@ -237,7 +251,7 @@ weightInitUniform' layer = weightInit Uniform (-limit) limit layer
 
 -- | Initialize weights normally given mean and std bounds
 weightInitNormal :: Float -> Float -> T.Linear -> IO T.Linear
-weightInitNormal = weightInit Normal
+weightInitNormal = weightInit' Normal
 
 -- | Initialize weights normally based on Fan In
 weightInitNormal' :: T.Linear -> IO T.Linear

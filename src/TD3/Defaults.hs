@@ -96,6 +96,8 @@ decayPeriod = 10 ^ (5 :: Int)
 -- | Action Noise standard deviation
 σAct :: T.Tensor
 σAct        = toTensor ([0.1] :: [Float])
+σClip :: Float
+σClip       = 0.5
 
 ------------------------------------------------------------------------------
 -- Neural Network Parameter Settings
@@ -103,7 +105,7 @@ decayPeriod = 10 ^ (5 :: Int)
 
 -- | Initial weights
 wInit :: Float
-wInit         = 3.0e-3
+wInit         = 3.0e-4
 -- | Actor Learning Rate
 ηφ :: T.Tensor
 ηφ            = toTensor (5.0e-3 :: Float)
