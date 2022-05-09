@@ -121,6 +121,9 @@ initWeights :: Initializer -> Float -> Float -> [Int] -> IO IndependentTensor
 -- | Initialize Weights of Linear Layer
 weightInit :: Initializer -> Float -> Float -> Linear -> IO Linear
 
+-- | Initialize Weights and Bias of Linear Layer
+weightInit' :: Initializer -> Float -> Float -> Linear -> IO Linear
+
 -- | Initialize weights uniformally given upper and lower bounds
 weightInitUniform :: Float -> Float -> Linear -> IO Linear
 
@@ -1242,6 +1245,9 @@ numIterations :: Int
 -- | Number of Steps to take with policy
 numSteps :: Int
 
+-- | Random Exploration every n Episodes
+randomEpisode :: Int
+
 -- | Number of epochs to train
 numEpochs :: Int
 
@@ -1296,15 +1302,16 @@ decayPeriod :: Int
 
 -- | Action Noise standard deviation
 σAct :: Tensor
+σClip :: Float
 
 -- | Initial weights
 wInit :: Float
 
--- | Learning Rate
-ηθ :: Tensor
-
--- | Learning Rate
+-- | Actor Learning Rate
 ηφ :: Tensor
+
+-- | Critic Learning Rate
+ηθ :: Tensor
 
 -- | Betas
 β1 :: Float
