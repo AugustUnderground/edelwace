@@ -77,8 +77,7 @@ instance T.Randomizable ActorNetSpec ActorNet where
                            <*> T.sample (T.LinearSpec 256     256)
                            <*> ( T.sample (T.LinearSpec 256 pActDim)
                                     >>= weightInitUniform (- wInit) wInit )
-                                    -- >>= weightInitNormal' )
-                                    -- >>= weightInitUniform (-wInit) wInit )
+                                    -- >>= weightInitNormal (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
@@ -354,9 +353,6 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                   then nanToNum' <$> randomActionPool envUrl
                   else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
                             >>= (T.detach . toFloatCPU)
-
-    when verbose do
-        print actions
 
     (!states', !targets', !targets'', !rewards, !dones) 
             <- postProcess' scaler <$> stepPool envUrl actions
