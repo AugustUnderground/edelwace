@@ -363,11 +363,10 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         buffer' = HER.push'' bufferSize buffer states actions rewards
                              states' dones targets' targets'' 
 
-    when (step < numSteps) do
+    when ((step < numSteps) && (iteration `mod` randomEpisode /= 0)) do
         _   <- trackLoss tracker (iter' !! step) "Success" success
+        _   <- trackReward tracker (iter' !! step) rewards
         pure ()
-
-    _       <- trackReward tracker (iter' !! step) rewards
 
     when (even step) do
         _   <- trackEnvState tracker envUrl (iter' !! step)
@@ -390,16 +389,16 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
 
 -- | Evaluate Policy until all envs are done at least once
 testPolicy :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
-                  -> Tracker -> T.Tensor -> IO ()
-testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker states 
+           -> Tracker -> T.Tensor -> T.Tensor -> IO ()
+testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets states 
                 | S.size done == numEnvs = pure ()
                 | otherwise              = do
 
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
-    actions <- T.detach . toFloatCPU . π φ . toFloatGPU $ states
-    (!states', _, _, _, !dones) 
-            <- postProcess' scaler <$> stepPool envUrl actions
+
+    (!states'', _, _, _, !dones) 
+            <- postProcess' scaler <$> (T.detach actions >>= stepPool envUrl)
 
     let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
         done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
@@ -413,14 +412,15 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker states
         putStrLn $ "\tTest " ++ show step ++ ", Average Success: \t" 
                              ++ show (100.0 * success) ++ "%"
 
-    states''' <- if T.any dones && (step' < numSteps)
+    states' <- if T.any dones && (step' < numSteps)
                     then fst3 . postProcess keys scaler <$> resetPool' envUrl dones
-                    else pure states'
+                    else pure states''
 
-    testPolicy iteration step' done' numEnvs agent envUrl tracker states''' 
+    testPolicy iteration step' done' numEnvs agent envUrl tracker targets states' 
   where
-    step' = step + 1
-    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
+    actions = toFloatCPU . π φ . toFloatGPU $ T.cat (T.Dim 1) [states, targets]
+    step'   = step + 1
+    iter'   = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
 
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training with RPB
 runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
@@ -503,8 +503,10 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     when ((iteration `mod` testEpisode == 0) && (iteration > 0)) do
         putStrLn "\tTesting current Policy"
-        resetPool envUrl >>= testPolicy iteration 0 S.empty numEnvs agent' envUrl tracker 
-                                        . fst3 . postProcess keys scaler 
+        testStates' <- resetPool envUrl
+        let (testStates, testTargets, _) = postProcess keys scaler testStates'
+        testPolicy iteration 0 S.empty numEnvs agent' envUrl tracker 
+                   testTargets testStates
 
     (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
 
