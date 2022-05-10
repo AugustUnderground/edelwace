@@ -34,12 +34,15 @@ import RPB
 import qualified RPB.RPB                          as RPB
 import qualified RPB.PER                          as PER
 import qualified RPB.ERE                          as ERE
+import qualified RPB.HER                          as HER
 import qualified Normal                           as D
 
 import MLFlow                 (TrackingURI)
 
 import Control.Monad
 import GHC.Generics
+import qualified Data.Map                         as M
+import qualified Data.Set                         as S
 import qualified Torch                            as T
 import qualified Torch.Functional.Internal        as T (negative)
 import qualified Torch.NN                         as NN
@@ -72,23 +75,21 @@ data CriticNet = CriticNet { qLayer0 :: T.Linear
 
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
-    sample ActorNetSpec{..} = ActorNet <$> ( T.sample (T.LinearSpec pObsDim 256) 
-                                             >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256     256)
-                                             >>= weightInitUniform' )
-                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
-                                             >>= weightInitUniform (-wInit) wInit )
-                                       <*> ( T.sample (T.LinearSpec 256 pActDim)
-                                             >>= weightInitUniform (-wInit) wInit )
+    sample ActorNetSpec{..} = ActorNet 
+                           <$>   T.sample (T.LinearSpec pObsDim 256) 
+                           <*>   T.sample (T.LinearSpec 256     256)
+                           <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                    >>= weightInitUniform (-wInit) wInit )
+                           <*> ( T.sample (T.LinearSpec 256 pActDim)
+                                    >>= weightInitUniform (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
-    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec dim 256) 
-                                               >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 256) 
-                                               >>= weightInitUniform' )
-                                         <*> ( T.sample (T.LinearSpec 256 1) 
-                                               >>= weightInitUniform' )
+    sample CriticNetSpec{..} = CriticNet 
+                            <$>   T.sample (T.LinearSpec dim 256) 
+                            <*>   T.sample (T.LinearSpec 256 256) 
+                            <*> ( T.sample (T.LinearSpec 256 1) 
+                                    >>= weightInitUniform' )
         where dim = qObsDim + qActDim
 
 -- | Actor Network Forward Pass
@@ -213,10 +214,8 @@ actRandom Agent{..} s = (\a' -> a' * 2.0 - 1.0) . toFloatGPU <$> T.randLikeIO' �
 -- | Get an Action (no grad)
 act :: Agent -> T.Tensor -> IO T.Tensor
 act Agent{..} s = do
-    ε <- toFloatGPU <$> T.randnLikeIO μ                    -- different ε's
-    -- ε <- toFloatGPU <$> T.randnIO' [head . T.shape $ μ, 1] -- same ε per sample
-    -- ε <- toFloatGPU <$> T.randnIO' [(!!1) . T.shape $ μ]   -- same ε per action
-    T.detach . T.tanh $ (μ + σ * ε)
+    ε <- toFloatGPU <$> T.randnLikeIO μ
+    T.detach $ T.tanh (μ + σ * ε)
   where
     (μ,σ') = π φ s
     σ      = T.exp σ'
@@ -224,9 +223,7 @@ act Agent{..} s = do
 -- | Get an action and log probs (grad)
 evaluate :: Agent -> T.Tensor -> T.Tensor -> IO (T.Tensor, T.Tensor)
 evaluate Agent{..} s εN = do
-    ε <- toFloatGPU <$> T.randnLikeIO μ                    -- different ε's
-    -- ε <- toFloatGPU <$> T.randnIO' [head . T.shape $ μ, 1] -- same ε per sample
-    -- ε <- toFloatGPU <$> T.randnIO' [(!!1) . T.shape $ μ]      -- same ε per action
+    ε <- toFloatGPU <$> T.randnLikeIO μ
     let a' = μ + σ * ε
         a  = T.tanh a'
         l1 = D.logProb n a'
@@ -247,7 +244,8 @@ evaluate Agent{..} s εN = do
 updateStepPER :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor 
               -> T.Tensor -> T.Tensor -> IO (Agent, T.Tensor)
 updateStepPER _ 0 agent _ _ _ prios = pure (agent, prios)
-updateStepPER iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} weights _ = do
+updateStepPER iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} 
+              weights _ = do
     let αLog' = T.toDependent αLog
         α     = T.exp αLog'
     α' <- if iteration == 0 then pure $ toTensor (0.0 :: Float)
@@ -357,7 +355,8 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} = 
     (a_t1, logπ_t1) <- evaluate agent s_t1 εNoise
 
     let q_t1' = q' θ1' θ2' s_t1 a_t1
-    q_t1 <- T.detach (r + (γ * d' * (q_t1' - α' * logπ_t1))) >>= T.clone
+        y     = r + (γ * d' * (q_t1' - α' * logπ_t1))
+    q_t1 <- T.detach y >>= T.clone
 
     let q1_t0 = q θ1 s_t0 a_t0
         q2_t0 = q θ2 s_t0 a_t0
@@ -365,8 +364,8 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} = 
     let δ1 = T.mseLoss q1_t0 q_t1
         δ2 = T.mseLoss q2_t0 q_t1
 
-    jQ1 <- T.clone . T.mean $ 0.5 * δ1
-    jQ2 <- T.clone . T.mean $ 0.5 * δ2
+    jQ1 <- T.clone (T.mean $ 0.5 * δ1)
+    jQ2 <- T.clone (T.mean $ 0.5 * δ2)
 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηq
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
@@ -402,15 +401,15 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} = 
             θ2Target' <- softSync τ θ2' θ2 
             pure (θ1Target', θ2Target')
 
-    (αlog', αOptim') <- if iteration `mod` d == 0 && αLearned
+    (αlog', αOptim') <- if epoch `mod` d == 0 && αLearned
                            then updateAlpha
                            else pure (αLog, αOptim)
 
-    (φOnline', φOptim') <- if iteration `mod` d == 0
+    (φOnline', φOptim') <- if epoch `mod` d == 0
                               then updateActor
                               else pure (φ, φOptim)
 
-    (θ1Target', θ2Target') <- if iteration `mod` d == 0
+    (θ1Target', θ2Target') <- if epoch `mod` d == 0
                                  then syncCritic
                                  else pure (θ1', θ2')
 
@@ -433,9 +432,9 @@ updateStepRPB iteration epoch agent@Agent{..} tracker memories@RPB.Buffer{..} = 
 -- | Perform Policy Update Steps (RPB)
 updatePolicyRPB :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
                 -> IO Agent
-updatePolicyRPB iteration agent tracker buffer epochs =
-    RPB.sampleIO batchSize buffer >>= 
-        updateStepRPB iteration epochs agent tracker
+updatePolicyRPB iteration agent tracker buffer epochs = do
+    memories <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer
+    updateStepRPB iteration epochs agent tracker memories
 
 -- | Policy Update Step (ERE)
 updateStepERE :: Int -> Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor 
@@ -450,7 +449,8 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker RPB.Buffer{..} = do
     (a_t1, logπ_t1) <- evaluate agent s_t1 εNoise
 
     let q_t1' = q' θ1' θ2' s_t1 a_t1
-    q_t1 <- T.detach (r + (γ * d' * (q_t1' - α' * logπ_t1))) >>= T.clone
+        y     = r + (γ * d' * (q_t1' - α' * logπ_t1))
+    q_t1 <- T.detach y >>= T.clone
 
     let q1_t0 = q θ1 s_t0 a_t0
         q2_t0 = q θ2 s_t0 a_t0
@@ -458,14 +458,14 @@ updateStepERE iteration epoch _ agent@Agent{..} tracker RPB.Buffer{..} = do
     let δ1 = T.mseLoss q1_t0 q_t1
         δ2 = T.mseLoss q2_t0 q_t1
 
-    jQ1 <- T.clone . T.mean $ 0.5 * δ1
-    jQ2 <- T.clone . T.mean $ 0.5 * δ2
+    jQ1 <- T.clone (T.mean $ 0.5 * δ1)
+    jQ2 <- T.clone (T.mean $ 0.5 * δ2)
 
     (θ1Online', θ1Optim') <- T.runStep θ1 θ1Optim jQ1 ηq
     (θ2Online', θ2Optim') <- T.runStep θ2 θ2Optim jQ2 ηq
     
     when (verbose && epoch `mod` 4 == 0) do
-        putStrLn $ "\tEpoch " ++ show epoch
+        putStrLn $ "\tEpoch "       ++ show epoch
         putStrLn $ "\t\tQ1 Loss:\t" ++ show jQ1
         putStrLn $ "\t\tQ2 Loss:\t" ++ show jQ2
 
@@ -574,6 +574,56 @@ evaluatePolicyRPB iteration step agent envUrl tracker buffer states = do
   where
     step' = step - 1
 
+-- | Evaluate Policy until all envs are done at least once
+evaluatePolicyHER :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
+                  -> Tracker -> T.Tensor -> T.Tensor -> HER.Buffer T.Tensor 
+                  -> IO (HER.Buffer T.Tensor)
+evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states 
+                  targets buffer | S.size done == numEnvs = pure buffer
+                                 | otherwise              = do
+
+    scaler  <- head . M.elems <$> acePoolScaler envUrl
+    keys    <- infoPool envUrl
+
+    actions <- if iteration <= 0 -- iteration `mod` randomEpisode == 0
+                  then nanToNum' <$> randomActionPool envUrl
+                  else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
+                            >>= (T.detach . toFloatCPU)
+
+    (!states', !targets', !targets'', !rewards, !dones) 
+            <- postProcess' scaler <$> stepPool envUrl actions
+
+    let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+        done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
+        success = (realToFrac . S.size $ done') / realToFrac numEnvs
+        buffer' = HER.push'' bufferSize buffer states actions rewards
+                             states' dones targets' targets'' 
+
+    when (step < numSteps) do
+        _   <- trackLoss tracker (iter' !! step) "Success" success
+        pure ()
+
+    _       <- trackReward tracker (iter' !! step) rewards
+
+    when (even step) do
+        _   <- trackEnvState tracker envUrl (iter' !! step)
+        pure ()
+
+    when (verbose && step `mod` 10 == 0) do
+        putStrLn $ "\tStep " ++ show step ++ ", Average Success: \t" 
+                             ++ show (100.0 * success) ++ "%"
+
+    (states''', targets''', _) 
+            <- if T.any dones && (step' < numSteps)
+                  then postProcess keys scaler <$> resetPool' envUrl dones
+                  else pure (states', targets', targets'')
+
+    evaluatePolicyHER iteration step' done' numEnvs agent envUrl tracker 
+                      states''' targets''' buffer'
+  where
+    step' = step + 1
+    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
+
 -- | Run Soft Actor Critic Training (PER)
 runAlgorithmPER :: Int -> Agent -> HymURL -> Tracker -> Bool -> PER.Buffer T.Tensor
                 -> T.Tensor -> IO Agent
@@ -605,6 +655,62 @@ runAlgorithmPER iteration agent envUrl tracker _ buffer states = do
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ show algorithm
+
+-- | Run Twin Delayed Deep Deterministic Policy Gradient Training with HER
+runAlgorithmHER :: Int -> Agent -> HymURL -> Tracker -> Bool 
+                -> HER.Buffer T.Tensor -> T.Tensor -> T.Tensor -> IO Agent
+runAlgorithmHER _ agent _ _ True _ _ _ = pure agent
+runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
+
+    when verbose do
+        let eve = if iteration <= 0 -- iteration `mod` randomEpisode == 0
+                    then "Random Exploration"
+                    else "Policy Exploitation"
+        putStrLn $ "Episode " ++ show iteration ++ " / " ++ show numIterations
+                ++ ": " ++ eve
+
+    numEnvs       <- numEnvsPool envUrl
+    trajectories  <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
+                                       tracker states targets HER.empty
+
+    let episodes = concatMap HER.epsSplit $ HER.envSplit numEnvs trajectories
+
+    predicate <- HER.targetCriterion . head . M.elems <$> acePoolPredicate envUrl
+
+    buffer' <- if strategy == HER.Random
+                  then HER.sampleTargets strategy k predicate $ 
+                             foldl (HER.push' bufferSize) buffer episodes
+                  else foldM (\b b' -> HER.push' bufferSize b 
+                                   <$> HER.sampleTargets strategy k predicate b') 
+                             buffer episodes
+
+    when verbose do
+        putStrLn $ "\tEpisode Buffer length:\t\t" ++ show (HER.size trajectories)
+        putStrLn $ "\tReplay Buffer Size:\t\t" ++ show (HER.size buffer')
+        putStrLn $ "\tSuccesses before augmentation:\t" 
+                 ++ ( show . head . T.shape . T.nonzero 
+                    $ (1.0 + HER.rewards trajectories))
+        putStrLn $ "\tSuccesses after augmentation:\t" 
+                 ++ ( show . head . T.shape . T.nonzero 
+                    $ (1.0 + HER.rewards buffer'))
+
+    let memory = HER.asRPB buffer'
+
+    !agent' <- if RPB.size memory <= batchSize 
+                  then pure agent
+                  else updatePolicyRPB iteration agent tracker memory numEpochs
+
+    saveAgent ptPath agent
+
+    keys   <- infoPool envUrl
+    scaler <- head . M.elems <$> acePoolScaler envUrl
+    (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
+
+    runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
+  where
+    done'         = iteration >= numIterations
+    iteration'    = iteration + 1
+    ptPath        = "./models/" ++ show algorithm
 
 -- | Run Soft Actor Critic Training (RPB)
 runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
@@ -667,23 +773,38 @@ runAlgorithmERE iteration epochs numEnvs agent envUrl tracker _ buffer states = 
         stop       = T.asValue (T.ge meanReward earlyStop) :: Bool
         done'      = (iteration >= numIterations) || stop
 
-    runAlgorithmERE iteration' epochs' numEnvs agent' envUrl tracker done' buffer' states'
+    runAlgorithmERE iteration' epochs' numEnvs agent' envUrl tracker 
+                    done' buffer' states'
   where
     iteration' = iteration + 1
     ptPath     = "./models/" ++ show algorithm
 
 -- | Handle training for different replay buffer types
-train' :: HymURL -> Tracker -> BufferType -> T.Tensor -> Agent -> IO Agent
-train' envUrl tracker PER states agent = do
-    let !buffer = PER.mkBuffer bufferSize αStart βStart βFrames
+train' :: HymURL -> Tracker -> BufferType -> Agent -> IO Agent
+train' envUrl tracker PER agent = do
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    let !states = processGace states' keys
+    let !buffer = PER.empty bufferSize αStart βStart βFrames
     runAlgorithmPER 0 agent envUrl tracker False buffer states
-train' envUrl tracker RPB states agent = 
-    runAlgorithmRPB 0 agent envUrl tracker False RPB.mkBuffer states 
-train' envUrl tracker ERE states agent = do
+train' envUrl tracker RPB agent = do
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    let !states = processGace states' keys
+    runAlgorithmRPB 0 agent envUrl tracker False RPB.empty states 
+train' envUrl tracker ERE agent = do
+    states' <- toFloatGPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    let !states = processGace states' keys
     numEnvs <- numEnvsPool envUrl
-    runAlgorithmERE 0 0 numEnvs agent envUrl tracker False RPB.mkBuffer states 
--- train' envUrl tracker PERERE states agent = error "Not Implemented"
-train' _ _ _ _ _ = undefined
+    runAlgorithmERE 0 0 numEnvs agent envUrl tracker False RPB.empty states 
+train' envUrl tracker HER agent = do
+    states' <- toFloatCPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    scaler  <- head . M.elems <$> acePoolScaler envUrl
+    let (states, targets, _) = postProcess keys scaler states'
+    runAlgorithmHER 0 agent envUrl tracker False HER.empty targets states 
+train' _ _ _ _ = undefined
 
 -- | Train Soft Actor Critic Agent on Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
@@ -691,12 +812,7 @@ train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
-    states' <- toFloatGPU <$> resetPool envUrl
-    keys    <- infoPool envUrl
-
-    let !states = processGace states' keys
-
-    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType states
+    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
     createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker

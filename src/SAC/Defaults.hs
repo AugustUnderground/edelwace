@@ -5,6 +5,7 @@ module SAC.Defaults where
 
 import Lib
 import RPB
+import RPB.HER
 
 import qualified Torch as T
 
@@ -20,18 +21,16 @@ verbose :: Bool
 verbose       = True
 -- | Replay Buffer Type
 bufferType :: BufferType
-bufferType    = RPB
+bufferType    = HER
 -- | How many steps to take in env
 numSteps :: Int
 numSteps      = 1
 -- | How many gradient update steps
 numEpochs :: Int
-numEpochs     = 1
+numEpochs     = 40
 -- | Total Number of iterations, depends on `bufferType`.
 numIterations :: Int
-numIterations = if bufferType == RPB 
-                   then 10 ^ (6 :: Int)
-                   else 10 ^ (4 :: Int)
+numIterations = 10 ^ (6 :: Int)
 -- | Early stop criterion
 earlyStop :: T.Tensor
 earlyStop     = toTensor (11.0 :: Float)
@@ -40,7 +39,7 @@ minReward :: Float
 minReward     = 20.0
 -- | Size of the batches during epoch
 batchSize :: Int
-batchSize     = 256
+batchSize     = 128
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
@@ -71,18 +70,18 @@ aceVariant = 0
 γ           = toTensor (0.99 :: Float)
 -- | Smoothing Coefficient
 τ :: T.Tensor
-τ           = toTensor (1.0e-2 :: Float)
+τ           = toTensor (5.0e-3 :: Float)
 -- | Action Noise
 εNoise :: T.Tensor
 εNoise      = toTensor (1.0e-6 :: Float)
 -- | Whether temperature coefficient is fixed or learned (see αInit)
 αLearned :: Bool
-αLearned    = False
+αLearned    = True
 -- | Temperature Coefficient
 αInit :: T.Tensor
-αInit       = if αLearned 
+αInit       = if αLearned
                  then toTensor (0.0 :: Float)
-                 else T.log $ toTensor (0.2 :: Float) -- 0.036
+                 else T.log $ toTensor (0.036 :: Float) -- 0.036
 -- | Lower Variance Clipping
 σMin :: Float
 σMin        = -2.0
@@ -97,7 +96,7 @@ rewardScale = toTensor (5.0 :: Float)
 ρ           = toTensor (1.0e-3 :: Float)
 -- | Update Step frequency
 d :: Int
-d           = 1
+d           = 2
 -- | Priority update factor
 εConst :: T.Tensor
 εConst      = toTensor (1.0e-5 :: Float)
@@ -114,10 +113,10 @@ wInit =  3.0e-3
 ηπ    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Critic(s)
 ηq :: T.Tensor
-ηq    = toTensor (1.0e-4 :: Float)
+ηq    = toTensor (3.0e-4 :: Float)
 -- | Learning Rate for Alpha
 ηα :: T.Tensor
-ηα    = toTensor (1.5e-4 :: Float)
+ηα    = toTensor (3.0e-4 :: Float)
 -- | Betas
 β1   :: Float
 β1    = 0.9
@@ -155,3 +154,17 @@ bufferSize = 10 ^ (6 :: Int)
 -- | Minimum Sampling Range
 cMin :: Int
 cMin = 5000
+
+------------------------------------------------------------------------------
+-- Hindsight Experience Replay Settings
+------------------------------------------------------------------------------
+
+-- | Target Sampling Strategy
+strategy :: Strategy
+strategy = Future
+-- | Number of Additional Targets to sample
+k :: Int 
+k        = 4
+-- | Error Tolerance for Target / Reward Calculation
+relTol :: T.Tensor
+relTol   = toTensor (1.0e-4 :: Float)
