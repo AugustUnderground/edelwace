@@ -25,6 +25,7 @@ module TD3 ( algorithm
            , act'
            , evaluate
            , train
+           , updatePolicy
            -- , play
            ) where
 
@@ -73,22 +74,22 @@ data CriticNet = CriticNet { q1Layer0 :: T.Linear
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
     sample ActorNetSpec{..} = ActorNet 
-                           <$> T.sample (T.LinearSpec pObsDim 256) 
-                           <*> T.sample (T.LinearSpec 256     256)
-                           <*> ( T.sample (T.LinearSpec 256 pActDim)
+                           <$> T.sample   (T.LinearSpec pObsDim 128) 
+                           <*> T.sample   (T.LinearSpec 128     128)
+                           <*> ( T.sample (T.LinearSpec 128 pActDim)
                                     >>= weightInitUniform (- wInit) wInit )
                                     -- >>= weightInitNormal (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
     sample CriticNetSpec{..} = CriticNet 
-                            <$> T.sample (T.LinearSpec dim 256) 
-                            <*> T.sample (T.LinearSpec 256 256) 
-                            <*> ( T.sample (T.LinearSpec 256 1) 
+                            <$> T.sample   (T.LinearSpec dim 128) 
+                            <*> T.sample   (T.LinearSpec 128 128) 
+                            <*> ( T.sample (T.LinearSpec 128 1) 
                                     >>= weightInitUniform (- wInit) wInit )
-                            <*> T.sample (T.LinearSpec dim 256) 
-                            <*> T.sample (T.LinearSpec 256 256) 
-                            <*> ( T.sample (T.LinearSpec 256 1) 
+                            <*> T.sample   (T.LinearSpec dim 128) 
+                            <*> T.sample   (T.LinearSpec 128 128) 
+                            <*> ( T.sample (T.LinearSpec 128 1) 
                                     >>= weightInitUniform (- wInit) wInit )
         where dim = qObsDim + qActDim
 
@@ -105,8 +106,8 @@ instance T.Randomizable CriticNetSpec CriticNet where
 --                                               >>= weightInitUniform' )
 --                                         <*> ( T.sample (T.LinearSpec 256     1)
 --                                               >>= weightInitUniform' )
-
 --        where dim = 128 + qActDim
+
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
 π ActorNet{..} o = a
@@ -239,10 +240,8 @@ evaluate Agent{..} s = do
 ------------------------------------------------------------------------------
 
 -- | Policy Update Step
-updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor 
-           -> IO Agent
-updateStep _ 0 agent _ _ = pure agent
-updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
+updateStep :: Int -> Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> IO Agent
+updateStep iteration epoch agent@Agent{..} tracker RPB.Buffer{..} = do
     a' <- evaluate agent s' >>= T.detach
     v' <- T.detach $ q' θ' s' a'
     y  <- T.detach $ r + ((1.0 - d') * γ * v')
@@ -265,9 +264,7 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
                                then syncTargets
                                else pure (φ', θ')
 
-    let agent' = Agent φOnline' φTarget' θOnline' θTarget' φOptim' θOptim'
-
-    updateStep iteration epoch' agent' tracker buffer
+    pure $ Agent φOnline' φTarget' θOnline' θTarget' φOptim' θOptim'
   where
     iter'  = reverse [(iteration * numEpochs) .. (iteration * numEpochs + numEpochs)]
     epoch' = epoch - 1
@@ -297,9 +294,13 @@ updateStep iteration epoch agent@Agent{..} tracker buffer@RPB.Buffer{..} = do
 -- | Perform Policy Update Steps
 updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
              -> IO Agent
+updatePolicy _         agent _       _      0      = pure agent
 updatePolicy iteration agent tracker buffer epochs = do
-    memories <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer
-    updateStep iteration epochs agent tracker memories
+    batch  <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer
+    agent' <- updateStep iteration epochs agent tracker batch
+    updatePolicy iteration agent' tracker buffer epochs'
+  where
+    epochs' = epochs - 1
 
 -- | Evaluate Policy for usually just one step and a pre-determined warmup Period
 evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
@@ -349,7 +350,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
 
-    actions <- if iteration `mod` randomEpisode == 0 -- iteration <= 0
+    actions <- if iteration <= 0 -- iteration `mod` randomEpisode == 0
                   then nanToNum' <$> randomActionPool envUrl
                   else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
                             >>= (T.detach . toFloatCPU)
@@ -401,10 +402,11 @@ runAlgorithmRPB iteration agent envUrl tracker _ buffer states = do
                                                 tracker states buffer
 
     let buffer' = RPB.push' bufferSize buffer memories'
+    batch <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer'
 
     !agent' <- if RPB.size buffer' < batchSize 
                   then pure agent
-                  else updatePolicy iteration agent tracker buffer' numEpochs
+                  else updateStep iteration numEpochs agent tracker batch
 
     when (iteration `mod` 10 == 0) do
         saveAgent ptPath agent 

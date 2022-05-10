@@ -7,7 +7,7 @@ import Lib
 import RPB
 import RPB.HER
 
-import qualified Torch   as T
+import qualified Torch as T
 
 ------------------------------------------------------------------------------
 --  General Default Settings
@@ -80,7 +80,7 @@ c           = 0.5
 -- | Soft Update coefficient (sometimes "polyak") of the target 
 -- networks τ ∈ [0,1]
 τ :: T.Tensor
-τ           = toTensor (0.005 :: Float)
+τ           = toTensor (5.0e-3 :: Float)
 -- | Decay Period
 decayPeriod :: Int
 decayPeriod = 10 ^ (5 :: Int)
@@ -108,10 +108,10 @@ wInit :: Float
 wInit         = 3.0e-4
 -- | Actor Learning Rate
 ηφ :: T.Tensor
-ηφ            = toTensor (5.0e-3 :: Float)
+ηφ            = toTensor (1.0e-3 :: Float)
 -- | Critic Learning Rate
 ηθ :: T.Tensor
-ηθ            = toTensor (5.0e-3 :: Float)
+ηθ            = toTensor (1.0e-3 :: Float)
 -- | Betas
 β1   :: Float
 β1            = 0.9
@@ -137,7 +137,7 @@ warmupPeriode :: Int
 warmupPeriode = 50
 -- | Range for clipping scaled states
 stateClip :: Float
-stateClip = 5.0
+stateClip     = 5.0
 
 ------------------------------------------------------------------------------
 -- Hindsight Experience Replay Settings
