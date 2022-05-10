@@ -350,7 +350,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
 
-    actions <- if iteration <= 0 -- iteration `mod` randomEpisode == 0
+    actions <- if iteration `mod` randomEpisode == 0 -- iteration <= 0 
                   then nanToNum' <$> randomActionPool envUrl
                   else act agent (toFloatGPU $ T.cat (T.Dim 1) [states, targets])
                             >>= (T.detach . toFloatCPU)

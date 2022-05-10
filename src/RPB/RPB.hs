@@ -12,6 +12,7 @@ module RPB.RPB ( Buffer (..)
                , pop
                , sample
                , sampleIO
+               , randomBatches
                , standardizeState
                ) where
 
@@ -89,10 +90,20 @@ sample idx = fmap (T.indexSelect 0 idx)
 
 -- | Uniform random sample from Replay Buffer
 sampleIO :: Int -> Buffer T.Tensor -> IO (Buffer T.Tensor)
-sampleIO batchSize buf = (`sample` buf)
-                                <$> T.multinomialIO i' batchSize False
+sampleIO batchSize buf =  (`sample` buf)
+                      <$> T.multinomialIO i' batchSize False
   where
     i' = toFloatCPU $ T.ones' [size buf]
+
+-- | Generate a list of random batches from a given buffer
+randomBatches :: Int -> Int -> Buffer T.Tensor -> IO [Buffer T.Tensor]
+randomBatches batchSize numBatches buf = do
+    idx <-  take numBatches . T.chunk batchSize (T.Dim 0)
+        <$> T.multinomialIO i' bufSize False
+    pure $ map (`sample` buf) idx
+  where
+    bufSize = size buf
+    i'  = toFloatCPU $ T.ones' [bufSize]
 
 -- | Scale and clip states and states'
 standardizeState :: Float -> Buffer T.Tensor -> Buffer T.Tensor 
