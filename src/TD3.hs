@@ -292,15 +292,13 @@ updateStep iteration epoch agent@Agent{..} tracker RPB.Buffer{..} = do
         pure (φTarget', θTarget')
 
 -- | Perform Policy Update Steps
-updatePolicy :: Int -> Agent -> Tracker -> RPB.Buffer T.Tensor -> Int 
-             -> IO Agent
-updatePolicy _         agent _       _      0      = pure agent
-updatePolicy iteration agent tracker buffer epochs = do
-    batch  <- fmap toFloatGPU <$> RPB.sampleIO batchSize buffer
+updatePolicy :: Int -> Agent -> Tracker -> [RPB.Buffer T.Tensor] -> IO Agent
+updatePolicy _         agent _       []              = pure agent
+updatePolicy iteration agent tracker (batch:batches) = do
     agent' <- updateStep iteration epochs agent tracker batch
-    updatePolicy iteration agent' tracker buffer epochs'
+    updatePolicy iteration agent' tracker batches
   where
-    epochs' = epochs - 1
+    epochs = length batches
 
 -- | Evaluate Policy for usually just one step and a pre-determined warmup Period
 evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
@@ -458,11 +456,10 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                  ++ ( show . head . T.shape . T.nonzero 
                     $ (1.0 + HER.rewards buffer'))
 
-    let memory = HER.asRPB buffer'
-
-    !agent' <- if RPB.size memory <= batchSize 
+    batches <- RPB.randomBatches batchSize numEpochs $ HER.asRPB buffer'
+    !agent' <- if HER.size buffer' <= batchSize 
                   then pure agent
-                  else updatePolicy iteration agent tracker memory numEpochs
+                  else updatePolicy iteration agent tracker batches
 
     saveAgent ptPath agent
 
