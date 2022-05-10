@@ -146,6 +146,10 @@ splitDim dim self = T.chunk size (T.Dim dim) self
     where
       size = T.shape self !! dim
 
+-- | First of three in a tuple
+fst3 :: (a,b,c) -> a
+fst3 (a,_,_) = a
+
 ------------------------------------------------------------------------------
 -- File System
 ------------------------------------------------------------------------------

@@ -74,22 +74,22 @@ data CriticNet = CriticNet { q1Layer0 :: T.Linear
 -- | Actor Network Weight initialization
 instance T.Randomizable ActorNetSpec ActorNet where
     sample ActorNetSpec{..} = ActorNet 
-                           <$> T.sample   (T.LinearSpec pObsDim 128) 
-                           <*> T.sample   (T.LinearSpec 128     128)
-                           <*> ( T.sample (T.LinearSpec 128 pActDim)
+                           <$> T.sample   (T.LinearSpec pObsDim 256) 
+                           <*> T.sample   (T.LinearSpec 256     256)
+                           <*> ( T.sample (T.LinearSpec 256 pActDim)
                                     >>= weightInitUniform (- wInit) wInit )
                                     -- >>= weightInitNormal (-wInit) wInit )
 
 -- | Critic Network Weight initialization
 instance T.Randomizable CriticNetSpec CriticNet where
     sample CriticNetSpec{..} = CriticNet 
-                            <$> T.sample   (T.LinearSpec dim 128) 
-                            <*> T.sample   (T.LinearSpec 128 128) 
-                            <*> ( T.sample (T.LinearSpec 128 1) 
+                            <$> T.sample   (T.LinearSpec dim 256) 
+                            <*> T.sample   (T.LinearSpec 256 256) 
+                            <*> ( T.sample (T.LinearSpec 256 1) 
                                     >>= weightInitUniform (- wInit) wInit )
-                            <*> T.sample   (T.LinearSpec dim 128) 
-                            <*> T.sample   (T.LinearSpec 128 128) 
-                            <*> ( T.sample (T.LinearSpec 128 1) 
+                            <*> T.sample   (T.LinearSpec dim 256) 
+                            <*> T.sample   (T.LinearSpec 256 256) 
+                            <*> ( T.sample (T.LinearSpec 256 1) 
                                     >>= weightInitUniform (- wInit) wInit )
         where dim = qObsDim + qActDim
 
@@ -387,6 +387,40 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
     step' = step + 1
     iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
 
+-- | Evaluate Policy until all envs are done at least once
+testPolicy :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
+                  -> Tracker -> T.Tensor -> IO ()
+testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker states 
+                | S.size done == numEnvs = pure ()
+                | otherwise              = do
+
+    scaler  <- head . M.elems <$> acePoolScaler envUrl
+    keys    <- infoPool envUrl
+    actions <- T.detach $ π φ states
+    (!states', _, _, _, !dones) 
+            <- postProcess' scaler <$> stepPool envUrl actions
+
+    let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
+        done'   = S.union done . S.fromList $ (T.asValue dones' :: [Int])
+        success = (realToFrac . S.size $ done') / realToFrac numEnvs
+
+    when (step < numSteps) do
+        _   <- trackLoss tracker (iter' !! step) "Test" success
+        pure ()
+
+    when (verbose && step `mod` 10 == 0) do
+        putStrLn $ "\tTest " ++ show step ++ ", Average Success: \t" 
+                             ++ show (100.0 * success) ++ "%"
+
+    states''' <- if T.any dones && (step' < numSteps)
+                    then fst3 . postProcess keys scaler <$> resetPool' envUrl dones
+                    else pure states'
+
+    testPolicy iteration step' done' numEnvs agent envUrl tracker states''' 
+  where
+    step' = step + 1
+    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
+
 -- | Run Twin Delayed Deep Deterministic Policy Gradient Training with RPB
 runAlgorithmRPB :: Int -> Agent -> HymURL -> Tracker -> Bool 
                 -> RPB.Buffer T.Tensor -> T.Tensor -> IO Agent
@@ -462,6 +496,10 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                   else updatePolicy iteration agent tracker batches
 
     saveAgent ptPath agent
+
+    when (iteration `mod` testEpisode == 0) do
+        putStrLn "\tTesting current Policy"
+        testPolicy iteration 0 S.empty numEnvs agent' envUrl tracker states 
 
     keys   <- infoPool envUrl
     scaler <- head . M.elems <$> acePoolScaler envUrl

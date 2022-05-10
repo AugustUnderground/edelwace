@@ -31,6 +31,9 @@ numSteps      = 50
 -- | Random Exploration every n Episodes
 randomEpisode :: Int
 randomEpisode = 10
+-- | Test every n Episodes
+testEpisode :: Int
+testEpisode = 20
 -- | Number of epochs to train
 numEpochs :: Int
 numEpochs     = 40
