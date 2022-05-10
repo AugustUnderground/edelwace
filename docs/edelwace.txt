@@ -826,6 +826,9 @@ sample :: Tensor -> Buffer Tensor -> Buffer Tensor
 -- | Uniform random sample from Replay Buffer
 sampleIO :: Int -> Buffer Tensor -> IO (Buffer Tensor)
 
+-- | Generate a list of random batches from a given buffer
+randomBatches :: Int -> Int -> Buffer Tensor -> IO [Buffer Tensor]
+
 -- | Scale and clip states and states'
 standardizeState :: Float -> Buffer Tensor -> Buffer Tensor
 instance GHC.Classes.Eq a => GHC.Classes.Eq (RPB.RPB.Buffer a)
@@ -1107,6 +1110,15 @@ bufferSize :: Int
 
 -- | Minimum Sampling Range
 cMin :: Int
+
+-- | Target Sampling Strategy
+strategy :: Strategy
+
+-- | Number of Additional Targets to sample
+k :: Int
+
+-- | Error Tolerance for Target / Reward Calculation
+relTol :: Tensor
 
 
 -- | Soft Actor Critic Algorithm Defaults
@@ -1434,6 +1446,9 @@ evaluate :: Agent -> Tensor -> IO Tensor
 -- | Train Twin Delayed Deep Deterministic Policy Gradient Agent on
 --   Environment
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
+
+-- | Perform Policy Update Steps
+updatePolicy :: Int -> Agent -> Tracker -> Buffer Tensor -> Int -> IO Agent
 instance GHC.Classes.Eq TD3.ActorNetSpec
 instance GHC.Show.Show TD3.ActorNetSpec
 instance GHC.Classes.Eq TD3.CriticNetSpec
