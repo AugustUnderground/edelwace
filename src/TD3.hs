@@ -295,10 +295,11 @@ updateStep iteration epoch agent@Agent{..} tracker RPB.Buffer{..} = do
 updatePolicy :: Int -> Agent -> Tracker -> [RPB.Buffer T.Tensor] -> IO Agent
 updatePolicy _         agent _       []              = pure agent
 updatePolicy iteration agent tracker (batch:batches) = do
-    agent' <- updateStep iteration epochs agent tracker batch
+    agent' <- updateStep iteration epochs agent tracker batch'
     updatePolicy iteration agent' tracker batches
   where
-    epochs = length batches
+    epochs = succ $ length batches
+    batch' = fmap toFloatGPU batch
 
 -- | Evaluate Policy for usually just one step and a pre-determined warmup Period
 evaluatePolicyRPB :: Int -> Int -> Agent -> HymURL -> Tracker -> T.Tensor 
@@ -396,7 +397,7 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker states
 
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
-    actions <- T.detach $ π φ states
+    actions <- T.detach . toFloatCPU . π φ . toFloatGPU $ states
     (!states', _, _, _, !dones) 
             <- postProcess' scaler <$> stepPool envUrl actions
 
@@ -497,12 +498,14 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     saveAgent ptPath agent
 
-    when (iteration `mod` testEpisode == 0) do
-        putStrLn "\tTesting current Policy"
-        testPolicy iteration 0 S.empty numEnvs agent' envUrl tracker states 
-
     keys   <- infoPool envUrl
     scaler <- head . M.elems <$> acePoolScaler envUrl
+
+    when ((iteration `mod` testEpisode == 0) && (iteration > 0)) do
+        putStrLn "\tTesting current Policy"
+        resetPool envUrl >>= testPolicy iteration 0 S.empty numEnvs agent' envUrl tracker 
+                                        . fst3 . postProcess keys scaler 
+
     (states', targets', _) <- postProcess keys scaler  <$> resetPool envUrl
 
     runAlgorithmHER iteration' agent' envUrl tracker done' buffer' targets' states' 
