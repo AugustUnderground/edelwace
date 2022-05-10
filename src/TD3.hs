@@ -179,11 +179,11 @@ saveAgent path Agent{..} = do
 
         T.saveParams φ  (path ++ "/actorOnline.pt")
         T.saveParams φ' (path ++ "/actorTarget.pt")
-        T.saveParams θ  (path ++ "/q1Online.pt")
-        T.saveParams θ' (path ++ "/q1Target.pt")
+        T.saveParams θ  (path ++ "/criticOnline.pt")
+        T.saveParams θ' (path ++ "/criticTarget.pt")
 
         saveOptim φOptim (path ++ "/actorOptim")
-        saveOptim θOptim (path ++ "/q1Optim")
+        saveOptim θOptim (path ++ "/criticOptim")
 
         putStrLn $ "\tSaving Checkpoint at " ++ path ++ " ... "
 
@@ -196,12 +196,12 @@ loadAgent :: String -> Int -> Int -> Int -> IO Agent
 loadAgent path obsDim iter actDim = do
         Agent{..} <- mkAgent obsDim actDim
 
-        fφ    <- T.loadParams φ  (path ++ "/actor.pt")
-        fφ'   <- T.loadParams φ' (path ++ "/actor.pt")
-        fθ    <- T.loadParams θ  (path ++ "/q1Online.pt")
-        fθ'   <- T.loadParams θ' (path ++ "/q1Target.pt")
+        fφ    <- T.loadParams φ  (path ++ "/actorOnline.pt")
+        fφ'   <- T.loadParams φ' (path ++ "/actorTarget.pt")
+        fθ    <- T.loadParams θ  (path ++ "/criticOnline.pt")
+        fθ'   <- T.loadParams θ' (path ++ "/criticTarget.pt")
         fφOpt <- loadOptim iter β1 β2 (path ++ "/actorOptim")
-        fθOpt <- loadOptim iter β1 β2 (path ++ "/q1Optim")
+        fθOpt <- loadOptim iter β1 β2 (path ++ "/criticOptim")
        
         pure $ Agent fφ fφ' fθ fθ' fφOpt fθOpt
 
