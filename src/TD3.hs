@@ -24,9 +24,9 @@ module TD3 ( algorithm
            , act
            , act'
            , evaluate
-           , train
            , updatePolicy
-           -- , play
+           , train
+           , play
            ) where
 
 import Lib
@@ -93,21 +93,6 @@ instance T.Randomizable CriticNetSpec CriticNet where
                                     >>= weightInitUniform (- wInit) wInit )
         where dim = qObsDim + qActDim
 
---instance T.Randomizable CriticNetSpec CriticNet where
---    sample CriticNetSpec{..} = CriticNet <$> ( T.sample (T.LinearSpec qObsDim 128) 
---                                               >>= weightInitUniform' )
---                                         <*> ( T.sample (T.LinearSpec dim     256) 
---                                               >>= weightInitUniform' )
---                                         <*> ( T.sample (T.LinearSpec 256     1) 
---                                               >>= weightInitUniform' )
---                                         <*> ( T.sample (T.LinearSpec qObsDim 128) 
---                                               >>= weightInitUniform' )
---                                         <*> ( T.sample (T.LinearSpec dim     256) 
---                                               >>= weightInitUniform' )
---                                         <*> ( T.sample (T.LinearSpec 256     1)
---                                               >>= weightInitUniform' )
---        where dim = 128 + qActDim
-
 -- | Actor Network Forward Pass
 π :: ActorNet -> T.Tensor -> T.Tensor
 π ActorNet{..} o = a
@@ -128,15 +113,6 @@ q CriticNet{..} o a = (v1,v2)
     v2 = T.linear q2Layer2 . T.relu
        . T.linear q2Layer1 . T.relu
        . T.linear q2Layer0 $ x
---q :: CriticNet -> T.Tensor -> T.Tensor -> (T.Tensor, T.Tensor)
---q CriticNet{..} o a = (v1,v2)
---  where 
---    o1 = T.leakyRelu negativeSlope $ T.linear q1Layer0 o
---    o2 = T.leakyRelu negativeSlope $ T.linear q2Layer0 o
---    x1 = T.cat (T.Dim $ -1) [o1, a]
---    x2 = T.cat (T.Dim $ -1) [o2, a]
---    v1 = T.linear q1Layer2 . T.leakyRelu negativeSlope . T.linear q1Layer1 $ x1
---    v2 = T.linear q2Layer2 . T.leakyRelu negativeSlope . T.linear q2Layer1 $ x2
 
 -- | Convenience Function, takes the minimum of both online actors
 q' :: CriticNet -> T.Tensor -> T.Tensor -> T.Tensor
@@ -193,13 +169,13 @@ saveAgent' p a = saveAgent p a >> pure a
 
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
-loadAgent path obsDim iter actDim = do
+loadAgent path obsDim actDim iter = do
         Agent{..} <- mkAgent obsDim actDim
 
-        fφ    <- T.loadParams φ  (path ++ "/actorOnline.pt")
-        fφ'   <- T.loadParams φ' (path ++ "/actorTarget.pt")
-        fθ    <- T.loadParams θ  (path ++ "/criticOnline.pt")
-        fθ'   <- T.loadParams θ' (path ++ "/criticTarget.pt")
+        fφ    <- T.loadParams φ       (path ++ "/actorOnline.pt")
+        fφ'   <- T.loadParams φ'      (path ++ "/actorTarget.pt")
+        fθ    <- T.loadParams θ       (path ++ "/criticOnline.pt")
+        fθ'   <- T.loadParams θ'      (path ++ "/criticTarget.pt")
         fφOpt <- loadOptim iter β1 β2 (path ++ "/actorOptim")
         fθOpt <- loadOptim iter β1 β2 (path ++ "/criticOptim")
        
@@ -526,7 +502,7 @@ train' envUrl tracker RPB agent = do
 train' envUrl tracker HER agent = do
     states' <- toFloatCPU <$> resetPool envUrl
     keys    <- infoPool envUrl
-    scaler <- head . M.elems <$> acePoolScaler envUrl
+    scaler  <- head . M.elems <$> acePoolScaler envUrl
     let (states, targets, _) = postProcess keys scaler states'
     runAlgorithmHER 0 agent envUrl tracker False HER.empty targets states 
 train' _ _ _ _ = undefined
@@ -537,7 +513,7 @@ train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
     tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
-    !agent <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
+    !agent  <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
     createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker
@@ -545,4 +521,12 @@ train obsDim actDim envUrl trackingUri = do
     pure agent
 
 -- | Play Environment with Twin Delayed Deep Deterministic Policy Gradient Agent
---play :: Agent -> HymURL -> IO (M.Map String Float, Float)
+play :: HymURL -> TrackingURI -> Agent -> IO ()
+play envUrl trackingUri agent = do
+    numEnvs <- numEnvsPool envUrl
+    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
+    states' <- toFloatCPU <$> resetPool envUrl
+    keys    <- infoPool envUrl
+    scaler  <- head . M.elems <$> acePoolScaler envUrl
+    let (states, targets, _) = postProcess keys scaler states'
+    testPolicy 0 0 S.empty numEnvs agent envUrl tracker targets states 

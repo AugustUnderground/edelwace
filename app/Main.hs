@@ -7,8 +7,11 @@ module Main where
 
 import Lib hiding (info)
 import qualified SAC
+import qualified SAC.Defaults as SAC
 import qualified TD3
+import qualified TD3.Defaults as TD3
 import qualified PPO
+import qualified PPO.Defaults as PPO
 import qualified MLFlow as MLF
 
 import Control.Monad
@@ -16,26 +19,40 @@ import Options.Applicative
 
 -- | Run Training
 run :: Args -> IO ()
-run Args{..} | notElem algorithm 
-             $ map show [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
-                         = error $ "No such algorithm " ++ algorithm
-             | otherwise = do
-    putStrLn $ "Trainig " ++ algorithm ++ " Agent."
+run Args{..} 
+    | notElem algorithm $ map show [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
+            = error $ "No such algorithm " ++ algorithm
+    | play = do
+        when (algorithm == show SAC.algorithm) do
+            let iter = SAC.numIterations
+            SAC.loadAgent path obs act iter >>= SAC.play url uri
+     
+        when (algorithm == show TD3.algorithm) do
+            let iter = TD3.numIterations
+            TD3.loadAgent path obs act iter >>= TD3.play url uri
+     
+        when (algorithm == show PPO.algorithm) do
+            let iter = PPO.numIterations
+            PPO.loadAgent path obs act iter >>= PPO.play url uri
 
-    when (algorithm == show SAC.algorithm) do
-        SAC.train obs act url uri >>= SAC.saveAgent path'
- 
-    when (algorithm == show TD3.algorithm) do
-        TD3.train obs act url uri >>= TD3.saveAgent path'
- 
-    when (algorithm == show PPO.algorithm) do
-        PPO.train obs act url uri >>= PPO.saveAgent path'
+        putStrLn $ algorithm ++ " Agent finished playing episode."
+    | otherwise = do
+        putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
-    putStrLn $ "Training " ++ algorithm ++ " Agent finished."
-  where
-    path' = path ++ "/"  ++ algorithm
-    url   = aceURL host port ace pdk var
-    uri   = MLF.trackingURI mlfHost mlfPort
+        when (algorithm == show SAC.algorithm) do
+            SAC.train obs act url uri >>= SAC.saveAgent path'
+     
+        when (algorithm == show TD3.algorithm) do
+            TD3.train obs act url uri >>= TD3.saveAgent path'
+     
+        when (algorithm == show PPO.algorithm) do
+            PPO.train obs act url uri >>= PPO.saveAgent path'
+
+        putStrLn $ "Training " ++ algorithm ++ " Agent finished."
+      where
+        path' = path ++ "/"  ++ algorithm
+        url   = aceURL host port ace pdk var
+        uri   = MLF.trackingURI mlfHost mlfPort
 
 -- | Main
 main :: IO ()
@@ -56,6 +73,7 @@ data Args = Args { algorithm :: String
                  , path      :: String
                  , mlfHost   :: String
                  , mlfPort   :: String
+                 , play      :: Bool
                  } deriving (Show)
 
 -- | Command Line Argument Parser
@@ -126,3 +144,6 @@ args = Args <$> strOption ( long "algorithm"
                          <> showDefault 
                          <> value "6008"
                          <> help "MLFlow tracking server port" )
+            <*> switch ( long "play"
+                      <> short 'y'
+                      <> help "Play instead of training" )

@@ -21,7 +21,7 @@ module PPO ( algorithm
            , π
            , q
            , train
-           -- , play
+           , play
            ) where
 
 import Lib
@@ -161,7 +161,7 @@ saveAgent' p a = saveAgent p a >> pure a
 
 -- | Load an Agent Checkpoint
 loadAgent :: String -> Int -> Int -> Int -> IO Agent
-loadAgent path obsDim iter actDim = do
+loadAgent path obsDim actDim iter = do
         Agent{..} <- mkAgent obsDim actDim
 
         fφ      <- T.loadParams φ   (path ++ "/actor.pt")
@@ -379,4 +379,6 @@ train obsDim actDim envUrl trackingUri = do
     pure agent
 
 -- | Play Environment with Proximal Policy Optimization Agent
--- play :: Agent -> HymURL -> IO Agent
+play :: HymURL -> TrackingURI -> Agent -> IO ()
+play _ _ _ = do
+    pure ()
