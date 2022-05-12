@@ -468,6 +468,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
                     $ (1.0 + HER.rewards buffer'))
 
     batches <- RPB.randomBatches batchSize numEpochs $ HER.asRPB buffer'
+
     !agent' <- if HER.size buffer' <= batchSize 
                   then pure agent
                   else updatePolicy iteration agent tracker batches
@@ -514,7 +515,7 @@ train obsDim actDim envUrl trackingUri = do
     tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
 
     !agent  <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
-    createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
+    -- createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker
 
