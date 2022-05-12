@@ -42,7 +42,7 @@ earlyStop :: T.Tensor
 earlyStop     = T.asTensor (11.0 :: Float)
 -- | Mini batch of N transistions
 batchSize :: Int
-batchSize     = 128
+batchSize     = 32 -- 128
 -- | Random seed for reproducability
 rngSeed :: Int
 rngSeed       = 666
