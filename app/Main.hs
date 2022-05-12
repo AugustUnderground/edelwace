@@ -39,6 +39,10 @@ run Args{..}
     | otherwise = do
         putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
+        timeStamp <- currentTimeStamp'
+        let path' = path ++ "/" ++ algorithm ++ "/" ++ ace ++ "-" ++ pdk 
+                         ++ "-v" ++ var ++ "-" ++ timeStamp
+
         when (algorithm == show SAC.algorithm) do
             SAC.train obs act url uri >>= SAC.saveAgent path'
      
@@ -50,7 +54,6 @@ run Args{..}
 
         putStrLn $ "Training " ++ algorithm ++ " Agent finished."
       where
-        path' = path ++ "/"  ++ algorithm
         url   = aceURL host port ace pdk var
         uri   = MLF.trackingURI mlfHost mlfPort
 
