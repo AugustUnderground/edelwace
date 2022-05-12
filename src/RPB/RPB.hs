@@ -13,6 +13,7 @@ module RPB.RPB ( Buffer (..)
                , sample
                , sampleIO
                , randomBatches
+               , randomBatches'
                , standardizeState
                ) where
 
@@ -98,6 +99,16 @@ sampleIO batchSize buf =  (`sample` buf)
 -- | Generate a list of random batches from a given buffer
 randomBatches :: Int -> Int -> Buffer T.Tensor -> IO [Buffer T.Tensor]
 randomBatches batchSize numBatches buf = do
+    idx <-  take numBatches . T.split batchSize (T.Dim 0)
+        <$> T.multinomialIO i' bufSize False
+    pure $ map (`sample` buf) idx
+  where
+    bufSize = size buf
+    i'  = toFloatCPU $ T.ones' [bufSize]
+
+-- | This is wrong, but kept here for historical reasons, because it worked.
+randomBatches' :: Int -> Int -> Buffer T.Tensor -> IO [Buffer T.Tensor]
+randomBatches' batchSize numBatches buf = do
     idx <-  take numBatches . T.chunk batchSize (T.Dim 0)
         <$> T.multinomialIO i' bufSize False
     pure $ map (`sample` buf) idx
