@@ -171,6 +171,15 @@ createModelArchiveDir algorithm = do
   where
     path' = "./models/" ++ algorithm ++ "/"
 
+-- | Create a model archive directory for the given algorithm, ace id and backend
+createModelArchiveDir' :: String -> String -> String -> String -> IO String
+createModelArchiveDir' alg ace pdk var = do
+    path <- (path' ++) <$> currentTimeStamp'
+    createDirectoryIfMissing True path
+    pure path
+  where
+    path' = "./models/" ++ alg ++ "/" ++ ace ++ "-" ++ pdk ++ "-v" ++ var ++ "-"
+
 -- | Optimizer moments at given prefix
 saveOptim :: T.Adam -> FilePath -> IO ()
 saveOptim optim prefix = do

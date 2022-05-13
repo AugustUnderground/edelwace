@@ -385,7 +385,7 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets st
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
-        putStrLn $ "\tTest " ++ show step ++ ", Average Success: \t" 
+        putStrLn $ "\t\tTest " ++ show step ++ ", Average Success: \t" 
                              ++ show (100.0 * success) ++ "%"
 
     states' <- if T.any dones && (step' < numSteps)
@@ -469,9 +469,9 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
 
     batches <- RPB.randomBatches batchSize numEpochs $ HER.asRPB buffer'
 
-    !agent' <- if HER.size buffer' <= batchSize 
-                  then pure agent
-                  else updatePolicy iteration agent tracker batches
+    !agent' <- if HER.size buffer' >= batchSize 
+                  then updatePolicy iteration agent tracker batches
+                  else pure agent
 
     saveAgent ptPath agent
 
@@ -512,14 +512,14 @@ train' _ _ _ _ = undefined
 train :: Int -> Int -> HymURL -> TrackingURI -> IO Agent
 train obsDim actDim envUrl trackingUri = do
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
-
+    tracker <- mkTracker trackingUri expName >>= newRuns' numEnvs
     !agent  <- mkAgent obsDim actDim >>= train' envUrl tracker bufferType
-    -- createModelArchiveDir (show algorithm) >>= (`saveAgent` agent)
 
     endRuns' tracker
-
     pure agent
+  where
+    expName = show algorithm ++ "-" 
+            ++ (reverse . takeWhile (/= '/') . reverse $ envUrl)
 
 -- | Play Environment with Twin Delayed Deep Deterministic Policy Gradient Agent
 play :: HymURL -> TrackingURI -> Agent -> IO ()

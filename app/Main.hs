@@ -39,10 +39,8 @@ run Args{..}
     | otherwise = do
         putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
-        timeStamp <- currentTimeStamp'
-        let path' = path ++ "/" ++ algorithm ++ "/" ++ ace ++ "-" ++ pdk 
-                         ++ "-v" ++ var ++ "-" ++ timeStamp
 
+        path' <- createModelArchiveDir' algorithm ace pdk var
         when (algorithm == show SAC.algorithm) do
             SAC.train obs act url uri >>= SAC.saveAgent path'
      
