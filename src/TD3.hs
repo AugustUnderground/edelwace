@@ -394,7 +394,7 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets st
 
     testPolicy iteration step' done' numEnvs agent envUrl tracker targets states' 
   where
-    actions = toFloatCPU . π φ . toFloatGPU $ T.cat (T.Dim 1) [states, targets]
+    actions = toFloatCPU . π φ' . toFloatGPU $ T.cat (T.Dim 1) [states, targets]
     step'   = step + 1
     iter'   = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
 
