@@ -345,7 +345,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
         pure ()
 
     when (even step) do
-        _   <- trackEnvState tracker envUrl (iter' !! step)
+        _   <- trackEnvState tracker envUrl (iter' !! step')
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
@@ -361,7 +361,7 @@ evaluatePolicyHER iteration step done numEnvs agent envUrl tracker states
                       states''' targets''' buffer'
   where
     step' = step + 1
-    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
+    iter' = [(iteration * numSteps) .. (iteration * numSteps + numSteps + 1)]
 
 -- | Evaluate Policy until all envs are done at least once
 testPolicy :: Int -> Int -> S.Set Int -> Int -> Agent -> HymURL 
@@ -442,6 +442,7 @@ runAlgorithmHER iteration agent envUrl tracker _ buffer targets states = do
         putStrLn $ "Episode " ++ show iteration ++ " / " ++ show numIterations
                 ++ ": " ++ eve
 
+    _             <- trackEnvState tracker envUrl (iteration * numSteps)
     numEnvs       <- numEnvsPool envUrl
     trajectories  <- evaluatePolicyHER iteration 0 S.empty numEnvs agent envUrl 
                                        tracker states targets HER.empty
