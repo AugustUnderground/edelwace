@@ -147,7 +147,7 @@ saveAgent path Agent{..} = do
         T.saveParams φ         (path ++ "/actor.pt")
         T.saveParams θ         (path ++ "/critic.pt")
 
-        when (actionSpace == Discrete) do
+        when (actionSpace /= Discrete) do
             T.save [logStd'] (path ++ "/logStd.pt")
 
         saveOptim optim        (path ++ "/optim")
