@@ -23,6 +23,7 @@ run Args{..}
     | notElem algorithm $ map show [SAC.algorithm, TD3.algorithm, PPO.algorithm] 
             = error $ "No such algorithm " ++ algorithm
     | play = do
+        putStrLn $ "Testing " ++ algorithm ++ " Agent."
         when (algorithm == show SAC.algorithm) do
             let iter = SAC.numIterations
             SAC.loadAgent path obs act iter >>= SAC.play url uri
@@ -36,11 +37,32 @@ run Args{..}
             PPO.loadAgent path obs act iter >>= PPO.play url uri
 
         putStrLn $ algorithm ++ " Agent finished playing episode."
+    | continue = do
+        putStrLn $ "Continue training " ++ algorithm ++ " Agent."
+
+        path' <- createModelArchiveDir' algorithm ace pdk var
+
+        when (algorithm == show SAC.algorithm) do
+            let iter = SAC.numIterations
+            SAC.loadAgent path obs act iter >>= SAC.continue url uri
+                                            >>= SAC.saveAgent path'
+     
+        when (algorithm == show TD3.algorithm) do
+            let iter = TD3.numIterations
+            TD3.loadAgent path obs act iter >>= TD3.continue url uri
+                                            >>= TD3.saveAgent path'
+     
+        when (algorithm == show PPO.algorithm) do
+            let iter = PPO.numIterations
+            PPO.loadAgent path obs act iter >>= PPO.continue url uri
+                                            >>= PPO.saveAgent path'
+
+        putStrLn $ algorithm ++ " Agent finished playing episode."
     | otherwise = do
         putStrLn $ "Trainig " ++ algorithm ++ " Agent."
 
-
         path' <- createModelArchiveDir' algorithm ace pdk var
+
         when (algorithm == show SAC.algorithm) do
             SAC.train obs act url uri >>= SAC.saveAgent path'
      
@@ -75,6 +97,7 @@ data Args = Args { algorithm :: String
                  , mlfHost   :: String
                  , mlfPort   :: String
                  , play      :: Bool
+                 , continue  :: Bool
                  } deriving (Show)
 
 -- | Command Line Argument Parser
@@ -148,3 +171,6 @@ args = Args <$> strOption ( long "algorithm"
             <*> switch ( long "play"
                       <> short 'y'
                       <> help "Play instead of training" )
+            <*> switch ( long "continue"
+                      <> short 'c'
+                      <> help "Continue training" )
