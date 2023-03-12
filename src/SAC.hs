@@ -25,6 +25,7 @@ module SAC ( algorithm
            , act
            , evaluate
            , train
+           , continue
            , play
            ) where
 
@@ -818,6 +819,20 @@ train obsDim actDim envUrl trackingUri = do
     endRuns' tracker
 
     pure agent
+
+-- | Continue training with Twin Delayed Deep Deterministic Policy Gradient Agent
+continue :: HymURL -> TrackingURI -> Agent -> IO Agent
+continue envUrl trackingUri agent = do
+    numEnvs <- numEnvsPool envUrl
+    tracker <- mkTracker trackingUri expName >>= newRuns' numEnvs
+    !agent' <- train' envUrl tracker bufferType agent
+
+    endRuns' tracker
+    pure agent'
+  where
+    expName = show algorithm ++ "-" 
+            ++ (reverse . takeWhile (/= '/') . reverse $ envUrl)
+            ++ "-cont"
 
 -- | Play Environment with Soft Actor Critic Agent
 play :: HymURL -> TrackingURI -> Agent -> IO ()

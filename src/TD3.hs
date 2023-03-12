@@ -26,6 +26,7 @@ module TD3 ( algorithm
            , evaluate
            , updatePolicy
            , train
+           , continue
            , play
            ) where
 
@@ -373,7 +374,7 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets st
     scaler  <- head . M.elems <$> acePoolScaler envUrl
     keys    <- infoPool envUrl
 
-    (!states'', _, _, _, !dones) 
+    (!states'', _, _, !rewards, !dones) 
             <- postProcess' scaler <$> (T.detach actions >>= stepPool envUrl)
 
     let dones'  = T.reshape [-1] . T.squeezeAll . T.nonzero . T.squeezeAll $ dones
@@ -381,7 +382,9 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets st
         success = (realToFrac . S.size $ done') / realToFrac numEnvs
 
     when (step < numSteps) do
-        _   <- trackLoss tracker (iter' !! step) "Test" success
+        _ <- trackLoss tracker (iter' !! step') "Test" success
+        _ <- trackEnvState tracker envUrl (iter' !! step')
+        _ <- trackReward tracker (iter' !! step') rewards
         pure ()
 
     when (verbose && step `mod` 10 == 0) do
@@ -394,7 +397,7 @@ testPolicy iteration step done numEnvs agent@Agent{..} envUrl tracker targets st
 
     testPolicy iteration step' done' numEnvs agent envUrl tracker targets states' 
   where
-    actions = toFloatCPU . π φ' . toFloatGPU $ T.cat (T.Dim 1) [states, targets]
+    actions = toFloatCPU . π φ . toFloatGPU $ T.cat (T.Dim 1) [states, targets]
     step'   = step + 1
     iter'   = [(iteration * numSteps) .. (iteration * numSteps + numSteps)]
 
@@ -522,13 +525,40 @@ train obsDim actDim envUrl trackingUri = do
     expName = show algorithm ++ "-" 
             ++ (reverse . takeWhile (/= '/') . reverse $ envUrl)
 
+-- | Continue training with Twin Delayed Deep Deterministic Policy Gradient Agent
+continue :: HymURL -> TrackingURI -> Agent -> IO Agent
+continue envUrl trackingUri agent = do
+    numEnvs <- numEnvsPool envUrl
+    tracker <- mkTracker trackingUri expName >>= newRuns' numEnvs
+    !agent' <- train' envUrl tracker bufferType agent
+
+    endRuns' tracker
+    pure agent'
+  where
+    expName = show algorithm ++ "-" 
+            ++ (reverse . takeWhile (/= '/') . reverse $ envUrl)
+            ++ "-cont"
+
 -- | Play Environment with Twin Delayed Deep Deterministic Policy Gradient Agent
 play :: HymURL -> TrackingURI -> Agent -> IO ()
 play envUrl trackingUri agent = do
+    _       <- resetPool envUrl
     numEnvs <- numEnvsPool envUrl
-    tracker <- mkTracker trackingUri (show algorithm) >>= newRuns' numEnvs
-    states' <- toFloatCPU <$> resetPool envUrl
+    tracker <- mkTracker trackingUri expName >>= newRuns' numEnvs
     keys    <- infoPool envUrl
     scaler  <- head . M.elems <$> acePoolScaler envUrl
-    let (states, targets, _) = postProcess keys scaler states'
-    testPolicy 0 0 S.empty numEnvs agent envUrl tracker targets states 
+    forM_ [0 .. testIters] 
+          (\itr -> do
+                putStrLn ("Episode " ++ show itr ++ " / " ++ show testIters) 
+                states' <- toFloatCPU <$> resetPool envUrl
+                let (states, targets, _) = postProcess keys scaler states'
+                    reward = T.negative $ T.ones' [numEnvs, 1]
+                _       <- trackEnvState tracker envUrl (itr * numSteps)
+                _       <- trackLoss tracker (itr * numSteps) "Test" 0.0
+                _       <- trackReward tracker (itr * numSteps) reward
+                testPolicy itr 0 S.empty numEnvs agent envUrl tracker targets states)
+  where
+    testIters = 4 -- testEpisode
+    expName   = show algorithm ++ "-" 
+              ++ (reverse . takeWhile (/= '/') . reverse $ envUrl)
+              ++ "-eval" 
